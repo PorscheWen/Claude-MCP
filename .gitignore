@@ -1,0 +1,12 @@
+# 敏感設定檔 - 不上傳至版本控制
+.env
+CLAUDE.md
+
+# 薪資單與截圖
+*.pdf
+*.png
+*.jpg
+
+# Python
+__pycache__/
+*.pyc
