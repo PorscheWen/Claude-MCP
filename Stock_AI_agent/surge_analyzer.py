@@ -687,7 +687,7 @@ def fetch_news_sentiment(hours_back: int = 48) -> dict:
 # Step 7: 大盤趨勢預測
 # ─────────────────────────────────────────
 ETF_BULL = "00631L"   # 元大台灣50正2（2x 多方槓桿）
-ETF_BEAR = "00618"    # 空方對應 ETF
+ETF_BEAR = "0050"     # 元大台灣50（避險/保守操作）
 
 
 # ─────────────────────────────────────────
@@ -1218,9 +1218,9 @@ def predict_market_trend() -> dict:
     elif direction in ("strong_bear", "bear"):
         etf_action = {
             "code":   ETF_BEAR,
-            "name":   "00618（空方對應 ETF）",
+            "name":   "0050 元大台灣50（保守避險）",
             "action": "買進" if direction == "bear" else "強力買進",
-            "reason": f"大盤空頭訊號出現（評分 {score:+d}），{ETF_BEAR} 可對沖下跌風險",
+            "reason": f"大盤空頭訊號出現（評分 {score:+d}），轉持 {ETF_BEAR} 元大台灣50 降低風險敞口",
         }
     else:
         etf_action = {
