@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(rm -fr *)",
+      "Bash(rm -r *)",
+      "Bash(rm -R *)",
+      "Bash(rm -f *)",
+      "Bash(sudo *)",
+      "Bash(dd *)",
+      "Bash(mkfs*)",
+      "Bash(diskutil erase*)",
+      "Bash(chmod 777 *)",
+      "Bash(chmod -R 777 *)",
+      "Bash(git reset --hard*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f *)",
+      "Bash(git clean -f*)",
+      "Bash(git branch -D*)",
+      "Bash(shutdown*)",
+      "Bash(reboot*)",
+      "Bash(: >*)",
+      "Bash(truncate *)"
+    ],
+    "defaultMode": "bypassPermissions"
+  },
+  "autoUpdatesChannel": "latest",
+  "skipDangerousModePermissionPrompt": true,
+  "language": "traditional chinese",
+  "statusLine": {
+    "type": "command",
+    "command": "bash \"/c/Users/BaoGo/.claude/statusline-command.sh\""
+  }
+}

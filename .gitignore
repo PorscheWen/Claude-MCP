@@ -1,6 +1,9 @@
 # 敏感設定檔 - 不上傳至版本控制
 .env
-CLAUDE.md
+/CLAUDE.md
+
+# Claude Code 備份（含敏感 Token，請確認 repo 為私人）
+# claude-backup/ 目錄刻意保留於版控以供跨機還原
 
 # 薪資單與截圖
 *.pdf
