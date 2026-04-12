@@ -1,5 +1,5 @@
 {
-  "version": "1.1",
+  "version": "1.2",
   "updated_at": "2026-04-12",
   "rules": [
     {
@@ -943,6 +943,114 @@
       "score": -10,
       "label": "經貿報復升級",
       "category": "strait"
+    },
+    {
+      "keyword": "TSMC AI需求強勁",
+      "score": 16,
+      "label": "台積電業績超預期",
+      "category": "semi"
+    },
+    {
+      "keyword": "台積電股價上漲",
+      "score": 12,
+      "label": "台股權值股表現亮眼",
+      "category": "semi"
+    },
+    {
+      "keyword": "Fed通膨壓力",
+      "score": -12,
+      "label": "美國通膨風險升高",
+      "category": "fed"
+    },
+    {
+      "keyword": "能源價格通膨",
+      "score": -16,
+      "label": "汽油飆升推高物價",
+      "category": "fed"
+    },
+    {
+      "keyword": "伊朗戰爭通膨衝擊",
+      "score": -18,
+      "label": "地緣政治引發能源危機",
+      "category": "us_china"
+    },
+    {
+      "keyword": "Fed政策前景不確定",
+      "score": -11,
+      "label": "央行政策面臨挑戰",
+      "category": "fed"
+    },
+    {
+      "keyword": "美伊談判",
+      "score": -8,
+      "label": "地緣政治不確定性，油價波動風險",
+      "category": "us_china"
+    },
+    {
+      "keyword": "出口強勁",
+      "score": 12,
+      "label": "台灣經濟表現超預期，利多",
+      "category": "tw_macro"
+    },
+    {
+      "keyword": "台積電訂單",
+      "score": 10,
+      "label": "競爭對手失利，TSMC客戶回流",
+      "category": "semi"
+    },
+    {
+      "keyword": "銀行獲利",
+      "score": 8,
+      "label": "金融獲利轉強，股市向上",
+      "category": "tw_macro"
+    },
+    {
+      "keyword": "AI晶片",
+      "score": 9,
+      "label": "AI相關廠商營收成長",
+      "category": "semi"
+    },
+    {
+      "keyword": "川普關稅",
+      "score": -9,
+      "label": "高額關稅政策，市場風險上升",
+      "category": "trump"
+    },
+    {
+      "keyword": "停火樂觀",
+      "score": 11,
+      "label": "地緣政治風險緩解，市場上漲",
+      "category": "us_china"
+    },
+    {
+      "keyword": "亞股上漲",
+      "score": 10,
+      "label": "區域市場情緒改善，台股跟漲",
+      "category": "us_china"
+    },
+    {
+      "keyword": "美股帶動補漲",
+      "score": 12,
+      "label": "短期正面，技術面利多",
+      "category": "us_china"
+    },
+    {
+      "keyword": "物價穩定",
+      "score": 8,
+      "label": "通膨受控，利於政策穩定",
+      "category": "tw_macro"
+    },
+    {
+      "keyword": "美伊談判僵局",
+      "score": -8,
+      "label": "地緣政治風險上升",
+      "category": "trump"
+    },
+    {
+      "keyword": "油價凍漲",
+      "score": -8,
+      "label": "能源成本，影響民生股走勢",
+      "category": "tw_macro"
     }
   ]
 }
