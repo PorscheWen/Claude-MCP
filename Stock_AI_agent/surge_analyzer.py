@@ -690,6 +690,216 @@ ETF_BULL = "00631L"   # 元大台灣50正2（2x 多方槓桿）
 ETF_BEAR = "00618"    # 空方對應 ETF
 
 
+# ─────────────────────────────────────────
+# 外部訊號 A：Polymarket + VIX 恐慌指數
+# ─────────────────────────────────────────
+# Polymarket：批量抓取後以關鍵字過濾，找台股相關地緣/政治市場
+POLY_KEYWORDS = {
+    "strait": {
+        # 用完整詞組避免 "pla" 匹配到 "playboi" 等無關詞
+        "terms":     ["taiwan", "china invades", "china invade taiwan", "invasion of taiwan",
+                      "chinese military", "strait of taiwan"],
+        "direction": -1,   # 台海衝突 → 台股極度利空
+        "weight":    2.5,
+        "label":     "台海衝突概率",
+    },
+    "trump": {
+        "terms":     ["trump tariff", "tariff on", "trade war", "trade tariff",
+                      "import tariff", "reciprocal tariff"],
+        "direction": -1,   # 川普關稅 → 台股利空
+        "weight":    1.2,
+        "label":     "川普/關稅風險",
+    },
+    "fed": {
+        "terms":     ["federal reserve rate", "fed rate cut", "fed rate hike",
+                      "fomc rate", "rate cut in 20"],
+        "direction": +1,   # 降息 → 台股利多（若搜到降息市場）
+        "weight":    1.2,
+        "label":     "Fed 利率方向",
+    },
+    "recession": {
+        "terms":     ["us recession", "american recession", "gdp recession",
+                      "economic recession"],
+        "direction": -1,
+        "weight":    1.5,
+        "label":     "美國衰退概率",
+    },
+}
+
+
+def fetch_polymarket_signals() -> dict:
+    """
+    查詢 Polymarket 公開預測市場 + VIX 恐慌指數，轉換為宏觀情緒分數。
+
+    Polymarket：
+      - 批量抓取 100 個活躍市場，以關鍵字過濾台股相關市場
+      - Yes 機率偏離 50% 越多，分數越高（方向依利多/利空設定）
+
+    VIX（CBOE Volatility Index，透過 yfinance）：
+      - VIX > 30：市場極度恐慌 → -10
+      - VIX 20-30：市場警戒 → -5
+      - VIX < 15：市場平靜 → +8
+
+    回傳 {"score": int, "items": list, "vix": float|None, "available": bool}
+    """
+    result = {"score": 0, "items": [], "vix": None, "available": False}
+
+    # ── A1. Polymarket ──
+    try:
+        resp = requests.get(
+            "https://gamma-api.polymarket.com/markets",
+            params={"limit": 100, "active": "true"},
+            timeout=8,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if resp.status_code == 200:
+            markets = resp.json() if isinstance(resp.json(), list) else []
+            seen = set()
+            for m in markets:
+                question = (m.get("question") or "").lower()
+                cid = m.get("conditionId", "")
+                if cid in seen:
+                    continue
+
+                for cat, cfg in POLY_KEYWORDS.items():
+                    if not any(kw in question for kw in cfg["terms"]):
+                        continue
+                    try:
+                        raw = m.get("outcomePrices", "[]")
+                        prices = json.loads(raw) if isinstance(raw, str) else raw
+                        yes_prob = float(prices[0]) if prices else 0.5
+                    except Exception:
+                        yes_prob = 0.5
+
+                    deviation = yes_prob - 0.5
+                    signal = round(deviation * cfg["direction"] * cfg["weight"] * 20)
+                    result["items"].append({
+                        "question":     m.get("question", "")[:70],
+                        "yes_prob":     round(yes_prob * 100, 1),
+                        "signal_score": signal,
+                        "category":     cat,
+                        "label":        cfg["label"],
+                    })
+                    result["score"] += signal
+                    result["available"] = True
+                    seen.add(cid)
+                    break   # 每市場只歸類一個類別
+    except Exception as e:
+        result["poly_error"] = str(e)
+
+    # ── A2. VIX 恐慌指數（yfinance，已有套件）──
+    try:
+        vix_hist = yf.Ticker("^VIX").history(period="5d")
+        if not vix_hist.empty:
+            vix_val = vix_hist["Close"].iloc[-1]
+            result["vix"] = round(float(vix_val), 1)
+            result["available"] = True
+
+            if vix_val > 35:
+                result["score"] -= 12
+                result["items"].append({
+                    "label": "VIX 恐慌指數", "question": f"VIX = {vix_val:.1f}（極度恐慌，>35）",
+                    "yes_prob": None, "signal_score": -12, "category": "tw_macro",
+                })
+            elif vix_val > 25:
+                result["score"] -= 6
+                result["items"].append({
+                    "label": "VIX 恐慌指數", "question": f"VIX = {vix_val:.1f}（警戒區，>25）",
+                    "yes_prob": None, "signal_score": -6, "category": "tw_macro",
+                })
+            elif vix_val < 15:
+                result["score"] += 8
+                result["items"].append({
+                    "label": "VIX 恐慌指數", "question": f"VIX = {vix_val:.1f}（市場平靜，<15）",
+                    "yes_prob": None, "signal_score": +8, "category": "tw_macro",
+                })
+            else:
+                result["items"].append({
+                    "label": "VIX 恐慌指數", "question": f"VIX = {vix_val:.1f}（正常區間）",
+                    "yes_prob": None, "signal_score": 0, "category": "tw_macro",
+                })
+    except Exception as e:
+        result["vix_error"] = str(e)
+
+    result["score"] = max(-25, min(25, result["score"]))
+    return result
+
+
+# ─────────────────────────────────────────
+# 外部訊號 B：AI-Trader Market-Intel
+# ─────────────────────────────────────────
+def fetch_market_intel_signals() -> dict:
+    """
+    查詢 AI-Trader market-intel API 取得宏觀訊號快照。
+    回傳 {"score": int, "bullish_ratio": float, "items": list, "available": bool}
+    """
+    result = {"score": 0, "bullish_ratio": 0.5, "items": [], "available": False}
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+
+        # 1. 宏觀訊號比率 + 逐條訊號說明
+        resp = requests.get(
+            "https://ai4trade.ai/api/market-intel/macro-signals",
+            timeout=8, headers=headers,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            bullish = data.get("bullish_count") or 0
+            total   = data.get("total_count")   or 0
+            verdict = (data.get("verdict") or "").lower()   # "bullish"/"bearish"/"neutral"
+
+            if total > 0:
+                ratio = bullish / total
+                result["bullish_ratio"] = round(ratio, 2)
+                result["verdict"] = verdict
+
+                if ratio >= 0.65:
+                    result["score"] += 10
+                elif ratio <= 0.35:
+                    result["score"] -= 10
+
+                result["items"].append(
+                    f"整體判斷：{verdict.upper()} — {bullish}/{total} 個多頭訊號（{ratio:.0%}）"
+                )
+
+                # 加入逐條訊號說明（優先顯示中文）
+                for sig in data.get("signals", [])[:5]:
+                    status = sig.get("status", "")
+                    label  = sig.get("label_zh") or sig.get("label", "")
+                    expl   = sig.get("explanation_zh") or sig.get("explanation", "")
+                    icon   = "+" if status == "bullish" else "-" if status == "bearish" else "~"
+                    result["items"].append(f"  [{icon}] {label}：{expl[:60]}")
+
+                result["available"] = True
+
+        # 2. 新聞快照（macro 類別，若有內容則顯示）
+        resp2 = requests.get(
+            "https://ai4trade.ai/api/market-intel/news",
+            params={"category": "macro", "limit": 5},
+            timeout=8, headers=headers,
+        )
+        if resp2.status_code == 200:
+            news_data = resp2.json()
+            items = news_data if isinstance(news_data, list) else news_data.get("items", [])
+            for item in items[:5]:
+                sentiment = (item.get("sentiment") or "").lower()
+                headline  = item.get("headline") or item.get("title") or ""
+                if sentiment == "bullish":
+                    result["score"] += 2
+                elif sentiment == "bearish":
+                    result["score"] -= 2
+                if headline:
+                    result["items"].append(f"  [新聞/{sentiment}] {headline[:65]}")
+            if items:
+                result["available"] = True
+
+    except Exception as e:
+        result["error"] = str(e)
+
+    result["score"] = max(-15, min(15, result["score"]))
+    return result
+
+
 def predict_market_trend() -> dict:
     """
     分析台股加權指數 (^TWII) + 美股三大指數，
@@ -918,7 +1128,47 @@ def predict_market_trend() -> dict:
         score -= 10
         signals.append("⚠️ 台海關係出現緊張訊號，注意地緣政治風險")
 
-    # ── 4. 綜合判斷 ──
+    # ── 4. 外部訊號：Polymarket + AI-Trader Market-Intel ──
+    ext_signals = {"polymarket": {}, "market_intel": {}, "combined_score": 0}
+    try:
+        poly  = fetch_polymarket_signals()
+        intel = fetch_market_intel_signals()
+
+        # 合併：Polymarket 60%、Market-Intel 40%
+        combined = round(poly["score"] * 0.6 + intel["score"] * 0.4)
+        combined = max(-20, min(20, combined))
+        score += combined
+
+        ext_signals = {
+            "polymarket":    poly,
+            "market_intel":  intel,
+            "combined_score": combined,
+        }
+
+        if combined >= 5:
+            signals.append(
+                f"外部市場共識偏多（Polymarket+MarketIntel 貢獻 +{combined}）"
+            )
+        elif combined <= -5:
+            signals.append(
+                f"外部市場共識偏空（Polymarket+MarketIntel 貢獻 {combined}）"
+            )
+        else:
+            signals.append(f"外部市場訊號中性（貢獻 {combined:+d}）")
+
+        # Polymarket 台海市場特別處理（高概率觸發額外懲罰）
+        for item in poly.get("items", []):
+            if item.get("category") == "strait" and item.get("yes_prob", 0) > 40:
+                score -= 15
+                signals.append(
+                    f"⚠️ Polymarket 台海衝突市場概率 {item['yes_prob']}%，地緣風險顯著"
+                )
+                break
+
+    except Exception as e:
+        signals.append(f"外部訊號載入失敗（{e}），僅使用技術面+新聞面")
+
+    # ── 5. 綜合判斷 ──
     score = max(-100, min(100, score))
 
     # 隔日 5%+ 漲幅概率判斷（需多重強訊號）
@@ -981,15 +1231,16 @@ def predict_market_trend() -> dict:
         }
 
     return {
-        "direction":        direction,
-        "score":            score,
+        "direction":          direction,
+        "score":              score,
         "next_day_5pct_prob": next_day_5pct,
-        "weekly_trend":     weekly,
-        "etf_action":       etf_action,
-        "signals":          signals,
-        "twii":             twii_data,
-        "us_markets":       us_data,
-        "news":             news,
+        "weekly_trend":       weekly,
+        "etf_action":         etf_action,
+        "signals":            signals,
+        "twii":               twii_data,
+        "us_markets":         us_data,
+        "news":               news,
+        "external_signals":   ext_signals,
     }
 
 
@@ -1176,6 +1427,53 @@ def generate_report(df_top10: pd.DataFrame, all_results: list, market: dict = No
                     title_short = display_title[:58] + ("…" if len(display_title) > 58 else "")
                     src_label = item["source"][:18]
                     lines.append(f"| {score_str} | {item['pub']} | {src_label} | {title_short} |")
+                lines.append("")
+
+        # 外部訊號區塊（Polymarket + Market-Intel）
+        ext = market.get("external_signals", {})
+        poly_data  = ext.get("polymarket", {})
+        intel_data = ext.get("market_intel", {})
+        ext_score  = ext.get("combined_score", 0)
+
+        if poly_data.get("available") or intel_data.get("available"):
+            lines.append("### 外部市場共識訊號")
+            lines.append(
+                f"- **綜合貢獻分數**：{ext_score:+d}"
+                f"（Polymarket {poly_data.get('score', 0):+d} × 60%"
+                f" + MarketIntel {intel_data.get('score', 0):+d} × 40%）"
+            )
+            lines.append("")
+
+            # Polymarket + VIX 表格
+            if poly_data.get("items"):
+                vix_val = poly_data.get("vix")
+                vix_str = f"VIX {vix_val}" if vix_val else ""
+                lines.append(
+                    f"**Polymarket 預測市場 + VIX 恐慌指數**"
+                    + (f"（{vix_str}）" if vix_str else "") + "："
+                )
+                lines.append("")
+                lines.append("| 類別 | 指標/問題 | Yes 概率 | 訊號分 |")
+                lines.append("|------|-----------|----------|--------|")
+                for item in poly_data["items"]:
+                    prob = f"{item['yes_prob']}%" if item.get("yes_prob") is not None else "N/A"
+                    icon = "🟢" if item["signal_score"] > 0 else "🔴" if item["signal_score"] < 0 else "⚪"
+                    lines.append(
+                        f"| {item['label']} | {item['question'][:52]} "
+                        f"| {prob} | {icon} {item['signal_score']:+d} |"
+                    )
+                lines.append("")
+
+            # Market-Intel 清單
+            if intel_data.get("items"):
+                ratio   = intel_data.get("bullish_ratio", 0.5)
+                verdict = (intel_data.get("verdict") or "").upper()
+                lines.append(
+                    f"**AI-Trader Market-Intel**"
+                    f"（{verdict}，多頭比率 {ratio:.0%}，評分 {intel_data.get('score', 0):+d}）："
+                )
+                for it in intel_data["items"]:
+                    lines.append(f"- {it}")
                 lines.append("")
 
         lines.append("### ETF 操作建議")
