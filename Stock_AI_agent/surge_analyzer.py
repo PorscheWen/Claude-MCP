@@ -292,6 +292,291 @@ def score_surge_potential(ind: dict, inst: dict, today_info: dict) -> float:
 
 
 # ─────────────────────────────────────────
+# Step 6: 大盤趨勢預測
+# ─────────────────────────────────────────
+ETF_BULL = "00631L"   # 元大台灣50正2（2x 多方槓桿）
+ETF_BEAR = "00618"    # 空方對應 ETF
+
+
+def predict_market_trend() -> dict:
+    """
+    分析台股加權指數 (^TWII) + 美股三大指數，
+    預測隔日是否有 5%+ 漲幅，或一週內持續上漲趨勢。
+
+    回傳 dict:
+      direction  : "strong_bull" | "bull" | "neutral" | "bear" | "strong_bear"
+      score      : -100 ~ +100（正=偏多，負=偏空）
+      next_day_5pct_prob : 隔日 5%+ 漲幅概率描述
+      weekly_trend       : 一週趨勢描述
+      etf_action         : {"code", "name", "action", "reason"}
+      signals            : list of signal strings
+      twii               : TWII 最新技術數據
+      us_markets         : US 指數摘要
+    """
+    signals = []
+    score = 0
+
+    # ── 1. 台股加權指數 ──
+    twii_hist = None
+    twii_data = {}
+    try:
+        twii = yf.Ticker("^TWII")
+        twii_hist = twii.history(period="3mo")
+        twii_hist.index = twii_hist.index.tz_localize(None)
+
+        close = twii_hist["Close"]
+        volume = twii_hist["Volume"]
+
+        last  = close.iloc[-1]
+        prev  = close.iloc[-2]
+        day_chg_pct = (last / prev - 1) * 100
+
+        ma5  = close.rolling(5).mean().iloc[-1]
+        ma20 = close.rolling(20).mean().iloc[-1]
+        ma60 = close.rolling(60).mean().iloc[-1] if len(close) >= 60 else None
+
+        # RSI
+        delta = close.diff()
+        gain = delta.where(delta > 0, 0).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rsi = (100 - 100 / (1 + gain / (loss + 1e-9))).iloc[-1]
+
+        # MACD
+        ema12 = close.ewm(span=12, adjust=False).mean()
+        ema26 = close.ewm(span=26, adjust=False).mean()
+        dif = ema12 - ema26
+        dea = dif.ewm(span=9, adjust=False).mean()
+        dif_val  = dif.iloc[-1]
+        dea_val  = dea.iloc[-1]
+        dif_prev = dif.iloc[-2]
+        dea_prev = dea.iloc[-2]
+
+        # 布林通道
+        ma20_s = close.rolling(20).mean()
+        std20  = close.rolling(20).std()
+        upper  = (ma20_s + 2 * std20).iloc[-1]
+        lower  = (ma20_s - 2 * std20).iloc[-1]
+        bb_pos = (last - lower) / (upper - lower + 1e-9)
+
+        # 近 5 日 / 10 日動量
+        ret5  = (last / close.iloc[-6]  - 1) * 100 if len(close) >= 6  else 0
+        ret10 = (last / close.iloc[-11] - 1) * 100 if len(close) >= 11 else 0
+
+        # 成交量比
+        vol_ratio = volume.iloc[-1] / (volume.rolling(20).mean().iloc[-1] + 1e-9)
+
+        twii_data = {
+            "last": round(last, 1),
+            "day_chg_pct": round(day_chg_pct, 2),
+            "ma5": round(ma5, 1),
+            "ma20": round(ma20, 1),
+            "ma60": round(ma60, 1) if ma60 else None,
+            "rsi": round(rsi, 1),
+            "dif": round(dif_val, 2),
+            "dea": round(dea_val, 2),
+            "upper": round(upper, 1),
+            "lower": round(lower, 1),
+            "bb_pos": round(bb_pos, 2),
+            "ret5": round(ret5, 2),
+            "ret10": round(ret10, 2),
+            "vol_ratio": round(vol_ratio, 2),
+        }
+
+        # ── 評分：均線 ──
+        if ma5 > ma20:
+            score += 15
+            signals.append("TWII MA5 > MA20（短線多頭排列）")
+        else:
+            score -= 15
+            signals.append("TWII MA5 < MA20（短線空頭排列）")
+
+        if ma60 and ma20 > ma60:
+            score += 10
+            signals.append("TWII MA20 > MA60（中長線偏多）")
+        elif ma60 and ma20 < ma60:
+            score -= 10
+            signals.append("TWII MA20 < MA60（中長線偏空）")
+
+        # ── 評分：RSI ──
+        if 50 <= rsi <= 70:
+            score += 12
+            signals.append(f"TWII RSI={rsi:.1f}（健康多頭區）")
+        elif rsi > 70:
+            score += 3
+            signals.append(f"TWII RSI={rsi:.1f}（超買，短線注意回調）")
+        elif 30 <= rsi < 50:
+            score -= 8
+            signals.append(f"TWII RSI={rsi:.1f}（弱勢區，偏空）")
+        else:
+            score += 8  # 極度超賣，反彈機率升高
+            signals.append(f"TWII RSI={rsi:.1f}（極度超賣，反彈訊號）")
+
+        # ── 評分：MACD ──
+        golden_cross = (dif_prev < dea_prev) and (dif_val >= dea_val)
+        death_cross  = (dif_prev > dea_prev) and (dif_val <= dea_val)
+
+        if golden_cross:
+            score += 20
+            signals.append("TWII MACD 剛形成金叉（強力買進訊號）")
+        elif dif_val > dea_val:
+            score += 10
+            signals.append(f"TWII MACD 多頭（DIF={dif_val:.1f} > DEA={dea_val:.1f}）")
+        elif death_cross:
+            score -= 20
+            signals.append("TWII MACD 剛形成死叉（強力賣出訊號）")
+        else:
+            score -= 10
+            signals.append(f"TWII MACD 空頭（DIF={dif_val:.1f} < DEA={dea_val:.1f}）")
+
+        # ── 評分：布林通道位置 ──
+        if bb_pos < 0.2:
+            score += 15
+            signals.append(f"TWII 接近布林下軌（位置 {bb_pos:.0%}），反彈空間大")
+        elif bb_pos > 0.85:
+            score -= 8
+            signals.append(f"TWII 接近布林上軌（位置 {bb_pos:.0%}），短線壓力")
+        else:
+            score += 5
+
+        # ── 評分：動量 ──
+        if ret5 > 5:
+            score += 10
+            signals.append(f"TWII 近5日強勢上漲 +{ret5:.1f}%，動能延續中")
+        elif ret5 > 0:
+            score += 5
+        elif ret5 < -5:
+            score -= 10
+            signals.append(f"TWII 近5日下跌 {ret5:.1f}%，空頭壓力")
+
+        # ── 評分：當日漲幅（動能延續判斷）──
+        if day_chg_pct > 3:
+            score += 8
+            signals.append(f"TWII 當日大漲 +{day_chg_pct:.1f}%，隔日動能可期")
+        elif day_chg_pct > 0:
+            score += 3
+        elif day_chg_pct < -3:
+            score -= 8
+            signals.append(f"TWII 當日大跌 {day_chg_pct:.1f}%，注意恐慌蔓延")
+
+        # ── 評分：爆量 ──
+        if vol_ratio > 1.8:
+            score += 8
+            signals.append(f"TWII 爆量（量比 {vol_ratio:.1f}x），主力介入明顯")
+
+    except Exception as e:
+        signals.append(f"TWII 資料抓取失敗：{e}")
+
+    # ── 2. 美股三大指數（前收盤，台股重要參考）──
+    us_data = {}
+    us_tickers = {"S&P500": "^GSPC", "NASDAQ": "^IXIC", "Dow Jones": "^DJI"}
+    us_total_chg = 0
+    us_count = 0
+
+    for name, sym in us_tickers.items():
+        try:
+            t = yf.Ticker(sym)
+            h = t.history(period="5d")
+            h.index = h.index.tz_localize(None)
+            if len(h) >= 2:
+                last_us  = h["Close"].iloc[-1]
+                prev_us  = h["Close"].iloc[-2]
+                chg_pct  = (last_us / prev_us - 1) * 100
+                us_data[name] = {"close": round(last_us, 1), "chg_pct": round(chg_pct, 2)}
+                us_total_chg += chg_pct
+                us_count += 1
+        except Exception:
+            us_data[name] = {"close": None, "chg_pct": None}
+
+    if us_count > 0:
+        us_avg_chg = us_total_chg / us_count
+        if us_avg_chg > 2:
+            score += 15
+            signals.append(f"美股三大指數平均漲 +{us_avg_chg:.1f}%（台股跟漲動能強）")
+        elif us_avg_chg > 0.5:
+            score += 7
+            signals.append(f"美股小幅收紅 +{us_avg_chg:.1f}%（台股溫和正面）")
+        elif us_avg_chg < -2:
+            score -= 15
+            signals.append(f"美股三大指數平均跌 {us_avg_chg:.1f}%（台股開低壓力大）")
+        elif us_avg_chg < -0.5:
+            score -= 7
+            signals.append(f"美股小幅收黑 {us_avg_chg:.1f}%（台股偏保守）")
+
+    # ── 3. 綜合判斷 ──
+    score = max(-100, min(100, score))
+
+    # 隔日 5%+ 漲幅概率判斷（需多重強訊號）
+    if score >= 60:
+        next_day_5pct = "高（多重強訊號共振，隔日跳空大漲可能性明顯）"
+    elif score >= 40:
+        next_day_5pct = "中（偏多，但 5% 以上需配合外資大量回補）"
+    elif score >= 15:
+        next_day_5pct = "低（偏多但力道不足，小幅上漲較可能）"
+    elif score <= -40:
+        next_day_5pct = "極低（偏空，下跌風險高）"
+    else:
+        next_day_5pct = "極低（盤整或下跌較可能）"
+
+    # 一週趨勢
+    if score >= 50:
+        weekly = "一週偏多：均線多頭排列 + MACD 動能向上，持續上漲趨勢明確"
+    elif score >= 20:
+        weekly = "一週溫和偏多：指數處於整理後醞釀上攻階段"
+    elif score >= -20:
+        weekly = "一週方向不明：觀望等待訊號更明確"
+    elif score >= -50:
+        weekly = "一週偏空：短線弱勢，注意支撐是否守住"
+    else:
+        weekly = "一週空頭明確：建議減碼避險"
+
+    # 方向判定
+    if score >= 50:
+        direction = "strong_bull"
+    elif score >= 20:
+        direction = "bull"
+    elif score <= -50:
+        direction = "strong_bear"
+    elif score <= -20:
+        direction = "bear"
+    else:
+        direction = "neutral"
+
+    # ETF 建議
+    if direction in ("strong_bull", "bull"):
+        etf_action = {
+            "code":   ETF_BULL,
+            "name":   "元大台灣50正2（2x槓桿多方）",
+            "action": "買進" if direction == "bull" else "強力買進",
+            "reason": f"大盤多頭訊號明確（評分 {score:+d}），{ETF_BULL} 可放大漲幅收益",
+        }
+    elif direction in ("strong_bear", "bear"):
+        etf_action = {
+            "code":   ETF_BEAR,
+            "name":   "00618（空方對應 ETF）",
+            "action": "買進" if direction == "bear" else "強力買進",
+            "reason": f"大盤空頭訊號出現（評分 {score:+d}），{ETF_BEAR} 可對沖下跌風險",
+        }
+    else:
+        etf_action = {
+            "code":   None,
+            "name":   None,
+            "action": "觀望",
+            "reason": f"大盤方向不明（評分 {score:+d}），建議等待更清晰訊號後再進場",
+        }
+
+    return {
+        "direction":        direction,
+        "score":            score,
+        "next_day_5pct_prob": next_day_5pct,
+        "weekly_trend":     weekly,
+        "etf_action":       etf_action,
+        "signals":          signals,
+        "twii":             twii_data,
+        "us_markets":       us_data,
+    }
+
+
+# ─────────────────────────────────────────
 # Step 6: 主程式
 # ─────────────────────────────────────────
 def main():
@@ -303,6 +588,23 @@ def main():
     print("► 抓取 TWSE 前百大交易量股票...")
     top100 = fetch_top100_by_volume(TRADE_DATE)
     print(f"  取得 {len(top100)} 支個股\n")
+
+    print("► 大盤趨勢預測（TWII + 美股）...")
+    market = predict_market_trend()
+    direction_label = {
+        "strong_bull": "強力多頭",
+        "bull":        "偏多",
+        "neutral":     "盤整觀望",
+        "bear":        "偏空",
+        "strong_bear": "強力空頭",
+    }.get(market["direction"], "不明")
+    etf = market["etf_action"]
+    print(f"  大盤評分：{market['score']:+d} ｜ 方向：{direction_label}")
+    if etf["code"]:
+        print(f"  ETF 建議：{etf['action']} {etf['code']} ({etf['name']})")
+    else:
+        print(f"  ETF 建議：{etf['action']}")
+    print()
 
     print("► 抓取三大法人籌碼...")
     inst_all = fetch_institutional(TRADE_DATE)
@@ -359,10 +661,10 @@ def main():
 
     # 排序取前 10
     df_result = pd.DataFrame(results).sort_values("surge_score", ascending=False).head(10).reset_index(drop=True)
-    return df_result, results
+    return df_result, results, market
 
 
-def generate_report(df_top10: pd.DataFrame, all_results: list) -> str:
+def generate_report(df_top10: pd.DataFrame, all_results: list, market: dict = None) -> str:
     lines = []
     lines.append(f"# 台股前百大交易量 — 隔日暴漲潛力 TOP 10")
     lines.append(f"**分析基準日**：{TRADE_DATE_FMT}　｜　**預測目標日**：2026-04-11（下一交易日）")
@@ -372,9 +674,67 @@ def generate_report(df_top10: pd.DataFrame, all_results: list) -> str:
     lines.append("---")
     lines.append("")
 
-    # 大盤摘要
+    # 大盤趨勢預測區塊
+    if market:
+        twii = market.get("twii", {})
+        us   = market.get("us_markets", {})
+        etf  = market.get("etf_action", {})
+        direction_zh = {
+            "strong_bull": "強力多頭",
+            "bull":        "偏多",
+            "neutral":     "盤整觀望",
+            "bear":        "偏空",
+            "strong_bear": "強力空頭",
+        }.get(market["direction"], "不明")
+        score = market["score"]
+        score_bar = "█" * (abs(score) // 10) + "░" * (10 - abs(score) // 10)
+        score_sign = "+" if score >= 0 else ""
+
+        lines.append("## 大盤趨勢預測")
+        lines.append("")
+        lines.append(f"| 項目 | 數值 |")
+        lines.append(f"|------|------|")
+        lines.append(f"| 大盤方向 | **{direction_zh}** |")
+        lines.append(f"| 綜合評分 | `{score_sign}{score}` （{score_bar}）|")
+        lines.append(f"| 隔日 5%+ 漲幅概率 | {market['next_day_5pct_prob']} |")
+        lines.append(f"| 一週趨勢預測 | {market['weekly_trend']} |")
+        lines.append("")
+
+        if twii:
+            lines.append("### 台股加權指數（TWII）")
+            lines.append(f"- 最新收盤：**{twii.get('last', 'N/A')}**（當日 {twii.get('day_chg_pct', 0):+.2f}%）")
+            lines.append(f"- MA5/MA20/MA60：{twii.get('ma5')} / {twii.get('ma20')} / {twii.get('ma60', 'N/A')}")
+            lines.append(f"- RSI(14)：{twii.get('rsi')}　｜　MACD DIF/DEA：{twii.get('dif')} / {twii.get('dea')}")
+            lines.append(f"- 布林通道位置：{twii.get('bb_pos', 0):.0%}（0%=下軌，100%=上軌）")
+            lines.append(f"- 近5日漲幅：{twii.get('ret5', 0):+.2f}%　｜　近10日：{twii.get('ret10', 0):+.2f}%")
+            lines.append(f"- 成交量比：{twii.get('vol_ratio', 0):.1f}x")
+            lines.append("")
+
+        if us:
+            lines.append("### 美股三大指數（前收盤）")
+            for name, d in us.items():
+                if d.get("close"):
+                    lines.append(f"- **{name}**：{d['close']:,}（{d['chg_pct']:+.2f}%）")
+            lines.append("")
+
+        lines.append("### 訊號清單")
+        for sig in market.get("signals", []):
+            icon = "🟢" if any(k in sig for k in ["多頭", "金叉", "強勢", "漲", "偏多", "超賣", "反彈"]) else "🔴"
+            lines.append(f"- {icon} {sig}")
+        lines.append("")
+
+        lines.append("### ETF 操作建議")
+        if etf.get("code"):
+            lines.append(f"**建議：{etf['action']} [{etf['code']}] {etf['name']}**")
+        else:
+            lines.append(f"**建議：{etf['action']}**")
+        lines.append(f"> {etf['reason']}")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+
+    # 個股分析樣本說明
     lines.append("## 大盤環境摘要")
-    lines.append("- **台股加權指數**：近期受美股回穩帶動，短線偏多")
     lines.append("- **分析樣本**：TWSE 全市場 1350 支個股，依成交量(張)取前 100 支個股進行篩選")
     lines.append("")
     lines.append("---")
@@ -557,6 +917,61 @@ def get_line_token() -> str | None:
     return None
 
 
+def build_market_line_message(market: dict) -> dict:
+    """組合大盤趨勢預測 LINE 訊息"""
+    twii = market.get("twii", {})
+    us   = market.get("us_markets", {})
+    etf  = market.get("etf_action", {})
+    direction_zh = {
+        "strong_bull": "強力多頭",
+        "bull":        "偏多",
+        "neutral":     "盤整觀望",
+        "bear":        "偏空",
+        "strong_bear": "強力空頭",
+    }.get(market["direction"], "不明")
+
+    score = market["score"]
+    score_icon = "🚀" if score >= 50 else "📈" if score >= 20 else "⚖️" if score >= -20 else "📉" if score >= -50 else "🔻"
+
+    us_lines = []
+    for name, d in us.items():
+        if d.get("chg_pct") is not None:
+            arrow = "▲" if d["chg_pct"] >= 0 else "▼"
+            us_lines.append(f"  {name}: {arrow}{abs(d['chg_pct']):.2f}%")
+
+    signal_summary = []
+    for sig in market.get("signals", [])[:4]:
+        signal_summary.append(f"• {sig}")
+
+    etf_line = ""
+    if etf.get("code"):
+        etf_line = f"\n\n💡 ETF 建議：{etf['action']} [{etf['code']}]\n{etf['reason']}"
+    else:
+        etf_line = f"\n\n💡 ETF 建議：{etf['action']}\n{etf['reason']}"
+
+    twii_line = ""
+    if twii:
+        twii_line = (
+            f"\n\n📊 TWII：{twii.get('last', 'N/A')}（{twii.get('day_chg_pct', 0):+.2f}%）"
+            f"\nRSI={twii.get('rsi')}  DIF={twii.get('dif')}  量比={twii.get('vol_ratio')}x"
+            f"\n近5日：{twii.get('ret5', 0):+.2f}%｜近10日：{twii.get('ret10', 0):+.2f}%"
+        )
+
+    text = (
+        f"{score_icon} 大盤趨勢預測\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"方向：{direction_zh}（評分 {score:+d}）\n"
+        f"隔日5%+概率：{market['next_day_5pct_prob'][:20]}\n"
+        f"一週趨勢：{market['weekly_trend'][:30]}"
+        f"{twii_line}\n\n"
+        f"🌍 美股前收\n" + "\n".join(us_lines) +
+        "\n\n主要訊號：\n" + "\n".join(signal_summary) +
+        etf_line
+    )
+
+    return {"type": "text", "text": text}
+
+
 def build_line_messages(df: pd.DataFrame, trade_date: str) -> list[dict]:
     """組合 LINE 推播訊息（3 則）"""
 
@@ -668,7 +1083,7 @@ if __name__ == "__main__":
     parser.add_argument("--no-line", action="store_true", help="跳過 LINE 推播")
     args = parser.parse_args()
 
-    df_top10, all_results = main()
+    df_top10, all_results, market = main()
 
     print("\n" + "="*60)
     print(" TOP 10 暴漲潛力股（評分排名）")
@@ -677,7 +1092,7 @@ if __name__ == "__main__":
                      "vol_ratio", "rsi", "surge_score"]].to_string(index=False))
 
     # 儲存 Markdown 報告
-    report_md = generate_report(df_top10, all_results)
+    report_md = generate_report(df_top10, all_results, market)
     report_dir = "C:/Users/BaoGo/Documents/ClaudeCode/Stock_AI_agent"
     output_path = f"{report_dir}/surge_report_{TRADE_DATE}.md"
     with open(output_path, "w", encoding="utf-8") as f:
@@ -687,5 +1102,7 @@ if __name__ == "__main__":
     # LINE 推播
     if not args.no_line:
         print("\n► 發送 LINE 推播...")
-        messages = build_line_messages(df_top10, TRADE_DATE)
-        send_line_messages(messages)
+        market_msg = build_market_line_message(market)
+        stock_msgs = build_line_messages(df_top10, TRADE_DATE)
+        # 大盤預測放第一則，接著個股排行與分析
+        send_line_messages([market_msg] + stock_msgs)
