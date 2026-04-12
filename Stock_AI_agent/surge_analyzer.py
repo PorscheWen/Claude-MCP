@@ -8,6 +8,7 @@ import io
 # Force UTF-8 output on Windows
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
+import os
 import requests
 import pandas as pd
 import yfinance as yf
@@ -319,6 +320,18 @@ NEWS_QUERIES_ZH = {
 GOOGLE_RSS_EN = "https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en&num=15"
 GOOGLE_RSS_ZH = "https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant&num=15"
 
+_KEYWORDS_FILE = os.path.join(os.path.dirname(__file__), "keywords.json")
+
+
+def load_sentiment_rules() -> list[tuple]:
+    """從 keywords.json 載入情緒規則，若檔案不存在則 fallback 至內建規則。"""
+    if os.path.exists(_KEYWORDS_FILE):
+        with open(_KEYWORDS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        return [(r["keyword"], r["score"], r["label"], r["category"])
+                for r in data.get("rules", [])]
+    return NEWS_SENTIMENT_RULES   # fallback
+
 # 關鍵字情緒字典：{keyword: (score, label, category)}
 # score: 正=對台股利多，負=利空；|score|越大影響越大
 NEWS_SENTIMENT_RULES = [
@@ -583,11 +596,14 @@ def fetch_news_sentiment(hours_back: int = 48) -> dict:
             seen.add(key)
             unique_entries.append(e)
 
+    # 載入最新規則（keywords.json 可能已被 auto_update_keywords.py 更新）
+    active_rules = load_sentiment_rules()
+
     # 情緒評分（先做，供後續同事件去重使用）
     def score_entry(entry):
         title = entry["title"]
         best_score, best_label, best_cat = 0, "", ""
-        for keyword, score, label, cat in NEWS_SENTIMENT_RULES:
+        for keyword, score, label, cat in active_rules:
             if keyword.lower() in title:
                 if abs(score) > abs(best_score):
                     best_score, best_label, best_cat = score, label, cat
