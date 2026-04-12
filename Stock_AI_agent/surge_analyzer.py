@@ -325,6 +325,7 @@ NEWS_SENTIMENT_RULES = [
     # ── Trump / 關稅 ──
     ("tariff exemption",         +20, "川普關稅豁免",      "trump"),
     ("tariff suspension",        +20, "川普暫停關稅",      "trump"),
+    ("suspending tariff",        +18, "川普暫停關稅",      "trump"),
     ("tariff pause",             +18, "川普暫停關稅",      "trump"),
     ("tariff reduction",         +15, "關稅減免",          "trump"),
     ("trade deal",               +12, "貿易協議",          "trump"),
@@ -349,6 +350,7 @@ NEWS_SENTIMENT_RULES = [
     ("us arms sale taiwan",      +15, "美售台武器",        "strait"),
     ("us taiwan defense",        +12, "美台防衛合作",      "strait"),
     ("china abandon threat",     +10, "中國放棄威脅",      "strait"),
+    ("abandon threat",           +10, "中國放棄威脅",      "strait"),
     ("taiwan independence",      -15, "台獨衝突風險",      "strait"),
 
     # ── TSMC / 半導體 ──
@@ -451,6 +453,38 @@ NEWS_SENTIMENT_RULES = [
     ("鷹派",          -12, "Fed鷹派",           "fed"),
     ("通膨升溫",      -10, "通膨升溫",          "fed"),
     ("衰退風險",      -15, "衰退風險",          "fed"),
+
+    # ── 台海/軍事（補充，繁中常見用語）──
+    ("機艦",          -20, "中國軍機艦船繞台",  "strait"),
+    ("台海周邊",      -20, "中國軍機艦船繞台",  "strait"),
+    ("繞台",          -22, "中國軍機繞台",      "strait"),
+    ("共機",          -22, "共機擾台",          "strait"),
+    ("共艦",          -18, "共艦繞台",          "strait"),
+    ("實彈演習",      -30, "中國實彈演習",      "strait"),
+    ("封台",          -35, "封鎖台灣",          "strait"),
+    ("兩岸統一",      -15, "兩岸統一政治壓力",  "strait"),
+    ("武統",          -35, "武力統一",          "strait"),
+    ("飛彈威脅",      -30, "飛彈威脅",          "strait"),
+
+    # ── 台灣出口/總經（補充）──
+    ("出口飆",        +18, "台灣出口大幅成長",  "tw_macro"),
+    ("出口創高",      +18, "台灣出口創新高",    "tw_macro"),
+    ("出口創新高",    +20, "台灣出口創歷史新高","tw_macro"),
+    ("創歷年單月新高",+20, "台灣出口創歷史新高","tw_macro"),
+    ("出口年增率",    +12, "台灣出口年增",      "tw_macro"),
+    ("出口年增",      +10, "台灣出口年增",      "tw_macro"),
+    ("出口衰退",      -12, "台灣出口衰退",      "tw_macro"),
+    ("美關稅",        -12, "美國關稅衝擊台灣",  "trump"),
+
+    # ── TSMC/科技（補充）──
+    ("降低依賴台積電",  -8, "去台積電化風險",   "semi"),
+    ("替代台積電",      -8, "競爭壓力",         "semi"),
+    ("rapidus",         -5, "日本替代方案",      "semi"),
+    ("台積電赴美",     +10, "台積電美國布局",    "semi"),
+    ("台積電日本",      +8, "台積電海外布局",    "semi"),
+    ("台積電德國",      +8, "台積電歐洲布局",    "semi"),
+    ("ai超旺",         +15, "AI需求超旺",        "semi"),
+    ("ai需求旺",       +12, "AI需求強勁",        "semi"),
 ]
 
 
@@ -509,9 +543,15 @@ def fetch_news_sentiment(hours_back: int = 48) -> dict:
                 else:
                     pub_dt = datetime.utcnow()
 
-                # 移除標題末尾的 "| 分類 - 來源" 部分，保留純標題
+                # 移除標題末尾的分類標籤與來源
+                # e.g. "標題| 政治 - 中央社 CNA" → "標題"
+                # e.g. "標題| 兩岸"               → "標題"
                 raw_title = entry.get("title", "")
-                clean_title = re.sub(r"\s*[|\-–]\s*(中央社|CNA|公視|PTS).*$", "", raw_title).strip()
+                clean_title = re.sub(
+                    r"\s*[|｜]\s*(政治|財經|兩岸|社會|國際|科技|生活|產經|證券|地方|影劇|運動|教育).*$",
+                    "", raw_title
+                ).strip()
+                clean_title = re.sub(r"\s*[-–]\s*(中央社|CNA|公視|PTS|PNN).*$", "", clean_title).strip()
 
                 # 取來源標籤
                 src = entry.get("source", {}).get("title", "")
@@ -543,30 +583,55 @@ def fetch_news_sentiment(hours_back: int = 48) -> dict:
             seen.add(key)
             unique_entries.append(e)
 
-    # 情緒評分
+    # 情緒評分（先做，供後續同事件去重使用）
+    def score_entry(entry):
+        title = entry["title"]
+        best_score, best_label, best_cat = 0, "", ""
+        for keyword, score, label, cat in NEWS_SENTIMENT_RULES:
+            if keyword.lower() in title:
+                if abs(score) > abs(best_score):
+                    best_score, best_label, best_cat = score, label, cat
+        return best_score, best_label, best_cat
+
+    for e in unique_entries:
+        s, l, c = score_entry(e)
+        e["score"], e["label"], e["category"] = s, l, c
+
+    # 同事件去重：同一類別 (category) + 同日 + 相似主題只保留最高分那則
+    # 防止「涉台措施」14 篇全部計分，實際上是同一事件
+    event_seen: dict = {}   # key = (category, date, keyword命中) → 最高分
+    deduped = []
+    for e in unique_entries:
+        if e["score"] == 0:
+            deduped.append(e)
+            continue
+        date_str = e["pub"][:5]   # "MM/DD"
+        # 用命中的關鍵字前 4 字 + 日期 + 類別 作為事件 key
+        event_key = (e["category"], date_str, e["label"][:6])
+        if event_key not in event_seen:
+            event_seen[event_key] = e
+            deduped.append(e)
+        else:
+            # 已有同事件，若本則分數更大則替換
+            existing = event_seen[event_key]
+            if abs(e["score"]) > abs(existing["score"]):
+                deduped.remove(existing)
+                event_seen[event_key] = e
+                deduped.append(e)
+            # 否則直接丟棄（同事件不重複計分）
+
+    unique_entries = deduped
+
+    # 情緒評分（已在去重前評過分，直接彙總）
     scored = []
     category_scores = {}
 
     for entry in unique_entries:
-        title = entry["title"]
-        best_score = 0
-        best_label = ""
-        best_cat   = ""
-
-        for keyword, score, label, cat in NEWS_SENTIMENT_RULES:
-            if keyword.lower() in title:
-                if abs(score) > abs(best_score):
-                    best_score = score
-                    best_label = label
-                    best_cat   = cat
-
-        entry["score"] = best_score
-        entry["label"] = best_label
-        entry["category"] = best_cat
-
-        if best_score != 0:
+        if entry["score"] != 0:
             scored.append(entry)
-            category_scores[best_cat] = category_scores.get(best_cat, 0) + best_score
+            category_scores[entry["category"]] = (
+                category_scores.get(entry["category"], 0) + entry["score"]
+            )
 
     # 加權總分（避免單類堆疊，各類別設上下限）
     total_score = 0
