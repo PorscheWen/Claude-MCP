@@ -1171,17 +1171,24 @@ def predict_market_trend() -> dict:
     # ── 5. 綜合判斷 ──
     score = max(-100, min(100, score))
 
-    # 隔日 5%+ 漲幅概率判斷（需多重強訊號）
+    # 隔日漲/跌 5% 概率（雙向）
     if score >= 60:
-        next_day_5pct = "高（多重強訊號共振，隔日跳空大漲可能性明顯）"
+        rise_5pct = "高（多重強訊號共振，跳空大漲可能性明顯）"
     elif score >= 40:
-        next_day_5pct = "中（偏多，但 5% 以上需配合外資大量回補）"
+        rise_5pct = "中（偏多，需配合外資持續回補）"
     elif score >= 15:
-        next_day_5pct = "低（偏多但力道不足，小幅上漲較可能）"
-    elif score <= -40:
-        next_day_5pct = "極低（偏空，下跌風險高）"
+        rise_5pct = "低（小幅上漲較可能，難達 5%）"
     else:
-        next_day_5pct = "極低（盤整或下跌較可能）"
+        rise_5pct = "極低"
+
+    if score <= -60:
+        fall_5pct = "高（多重空頭訊號，重挫風險大）"
+    elif score <= -40:
+        fall_5pct = "中（偏空，下跌風險明顯）"
+    elif score <= -15:
+        fall_5pct = "低（輕微偏空，小跌為主）"
+    else:
+        fall_5pct = "極低"
 
     # 一週趨勢
     if score >= 50:
@@ -1231,10 +1238,11 @@ def predict_market_trend() -> dict:
         }
 
     return {
-        "direction":          direction,
-        "score":              score,
-        "next_day_5pct_prob": next_day_5pct,
-        "weekly_trend":       weekly,
+        "direction":        direction,
+        "score":            score,
+        "rise_5pct_prob":   rise_5pct,
+        "fall_5pct_prob":   fall_5pct,
+        "weekly_trend":     weekly,
         "etf_action":         etf_action,
         "signals":            signals,
         "twii":               twii_data,
@@ -1303,6 +1311,7 @@ def main():
         results.append({
             "rank_vol": idx + 1,
             "code": code,
+            "name": row.get("name", ""),
             "close": ind["last_close"],
             "change_pct": row["change_pct"],
             "volume_lots": int(row["volume_lots"]),
@@ -1364,7 +1373,8 @@ def generate_report(df_top10: pd.DataFrame, all_results: list, market: dict = No
         lines.append(f"|------|------|")
         lines.append(f"| 大盤方向 | **{direction_zh}** |")
         lines.append(f"| 綜合評分 | `{score_sign}{score}` （{score_bar}）|")
-        lines.append(f"| 隔日 5%+ 漲幅概率 | {market['next_day_5pct_prob']} |")
+        lines.append(f"| 隔日漲 5%+ 概率 | {market['rise_5pct_prob']} |")
+        lines.append(f"| 隔日跌 5%+ 概率 | {market['fall_5pct_prob']} |")
         lines.append(f"| 一週趨勢預測 | {market['weekly_trend']} |")
         lines.append("")
 
@@ -1496,13 +1506,13 @@ def generate_report(df_top10: pd.DataFrame, all_results: list, market: dict = No
     # TOP 10 表格
     lines.append("## TOP 10 暴漲潛力股一覽")
     lines.append("")
-    lines.append("| 排名 | 代碼 | 收盤 | 當日漲幅 | 成交量(張) | 量比 | RSI | 評分 |")
-    lines.append("|------|------|------|---------|-----------|------|-----|------|")
+    lines.append("| 排名 | 代碼 | 名稱 | 收盤 | 當日漲幅 | 成交量(張) | 評分 |")
+    lines.append("|------|------|------|------|---------|-----------|------|")
 
     for i, row in df_top10.iterrows():
         lines.append(
-            f"| {i+1} | {row['code']} | {row['close']:.2f} | {row['change_pct']:+.2f}% "
-            f"| {row['volume_lots']:,} | {row['vol_ratio']:.1f}x | {row['rsi']:.1f} | **{row['surge_score']}** |"
+            f"| {i+1} | {row['code']} | {row.get('name','')} | {row['close']:.2f} | {row['change_pct']:+.2f}% "
+            f"| {row['volume_lots']:,} | **{row['surge_score']}** |"
         )
 
     lines.append("")
@@ -1526,17 +1536,17 @@ def generate_report(df_top10: pd.DataFrame, all_results: list, market: dict = No
     }
 
     for i, row in df_top10.iterrows():
-        lines.append(f"### {i+1}. 【{row['code']}】｜ 評分：{row['surge_score']} 分")
+        name_str = row.get("name", "")
+        lines.append(f"### {i+1}. 【{row['code']}】{name_str}｜ 評分：{row['surge_score']} 分")
         lines.append("")
         lines.append("#### 前一日收盤")
         lines.append(f"- 收盤價：**{row['close']:.2f}** 元（漲跌 {row['change_pct']:+.2f}%）")
-        lines.append(f"- 成交量：**{row['volume_lots']:,}** 張（較均量 {row['vol_ratio']:.1f}x）")
+        lines.append(f"- 成交量：**{row['volume_lots']:,}** 張")
         lines.append("")
         lines.append("#### 技術面")
 
         ma_trend = "多頭排列" if row["ma5"] > row["ma20"] else "空頭排列"
         lines.append(f"- MA5/MA20：{row['ma5']:.2f} / {row['ma20']:.2f}（{ma_trend}）")
-        lines.append(f"- RSI(14)：{row['rsi']:.1f}（{'超賣' if row['rsi'] < 30 else '超買' if row['rsi'] > 70 else '正常區間'}）")
 
         macd_signal = "金叉" if row["dif"] > row["dea"] else "死叉"
         lines.append(f"- MACD：DIF {row['dif']:.3f} / DEA {row['dea']:.3f}（{macd_signal}）")
@@ -1557,21 +1567,15 @@ def generate_report(df_top10: pd.DataFrame, all_results: list, market: dict = No
 
         reasons = []
 
-        # 爆量
+        # 爆量（保留邏輯，改用成交量絕對值呈現）
         if row["vol_ratio"] >= 3.0:
-            reasons.append(f"📈 **爆量突破**：量比高達 {row['vol_ratio']:.1f}x，主力積極進場，隔日延續強勢概率大。")
+            reasons.append(f"📈 **爆量突破**：成交量 {row['volume_lots']:,} 張（均量 3 倍以上），主力積極進場，動能強烈。")
         elif row["vol_ratio"] >= 2.0:
-            reasons.append(f"📊 **放量上攻**：量比 {row['vol_ratio']:.1f}x，成交量顯著放大，買盤動能充足。")
+            reasons.append(f"📊 **放量上攻**：成交量 {row['volume_lots']:,} 張（均量 2 倍以上），買盤動能充足。")
 
         # MACD
         if row["dif"] > row["dea"] and row["macd_bar"] > 0:
             reasons.append(f"✅ **MACD 多頭**：DIF({row['dif']:.3f}) > DEA({row['dea']:.3f})，動能向上確認。")
-
-        # RSI
-        if row["rsi"] < 35:
-            reasons.append(f"🔄 **RSI 超賣反彈**：RSI={row['rsi']:.1f}，短線超賣後反彈空間大。")
-        elif 35 <= row["rsi"] < 55:
-            reasons.append(f"📐 **RSI 健康啟動區**：RSI={row['rsi']:.1f}，未過熱，適合追漲。")
 
         # 布林通道
         band_width = row["upper"] - row["lower"]
@@ -1737,7 +1741,8 @@ def build_market_line_message(market: dict) -> dict:
         f"{score_icon} 大盤趨勢預測\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"方向：{direction_zh}（評分 {score:+d}）\n"
-        f"隔日5%+概率：{market['next_day_5pct_prob'][:20]}\n"
+        f"漲5%+概率：{market['rise_5pct_prob'][:18]}\n"
+        f"跌5%+概率：{market['fall_5pct_prob'][:18]}\n"
         f"一週趨勢：{market['weekly_trend'][:30]}"
         f"{twii_line}\n\n"
         f"🌍 美股前收\n" + "\n".join(us_lines) +
@@ -1757,16 +1762,16 @@ def build_line_messages(df: pd.DataFrame, trade_date: str) -> list[dict]:
     medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
     for i, row in df.iterrows():
         chg = f"{row['change_pct']:+.2f}%"
+        name_short = row.get("name", "")[:4]
         rows.append(
-            f"{medals[i]} {row['code']}  {row['close']:.1f}  {chg}  "
-            f"{row['vol_ratio']:.1f}x  {row['rsi']:.0f}  {int(row['surge_score'])}"
+            f"{medals[i]} {row['code']} {name_short}  {row['close']:.1f}  {chg}  {int(row['surge_score'])}"
         )
 
     msg1 = (
         f"📊 台股前百大交易量 — 隔日暴漲潛力 TOP 10\n"
         f"基準日：{trade_date[:4]}-{trade_date[4:6]}-{trade_date[6:]}｜預測：隔一交易日\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "   代碼　收盤　　漲幅　量比 RSI 評分\n"
+        "   代碼 名稱　收盤　漲幅　評分\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         + "\n".join(rows) +
         "\n━━━━━━━━━━━━━━━━━━━━"
@@ -1786,21 +1791,20 @@ def build_line_messages(df: pd.DataFrame, trade_date: str) -> list[dict]:
         # 主要理由
         reasons = []
         if row["vol_ratio"] >= 3.0:
-            reasons.append(f"爆量{row['vol_ratio']:.1f}x")
+            reasons.append(f"爆量({row['volume_lots']:,}張)")
         elif row["vol_ratio"] >= 2.0:
-            reasons.append(f"放量{row['vol_ratio']:.1f}x")
+            reasons.append(f"放量({row['volume_lots']:,}張)")
         if row["dif"] > row["dea"]:
             reasons.append("MACD金叉")
         if isinstance(row["foreign"], (int, float)) and row["foreign"] > 0 and isinstance(row["trust"], (int, float)) and row["trust"] > 0:
             reasons.append("三法人買超")
         elif isinstance(row["foreign"], (int, float)) and row["foreign"] > 500:
             reasons.append(f"外資+{int(row['foreign'])//1000}千張")
-        if row["rsi"] < 35:
-            reasons.append(f"RSI超賣({row['rsi']:.0f})")
 
         reason_str = "、".join(reasons) if reasons else "技術偏多"
+        name_str = row.get("name", "")
         detail_lines.append(
-            f"\n【{row['code']}】{score}分｜{action}\n"
+            f"\n【{row['code']}】{name_str} {score}分｜{action}\n"
             f"{reason_str}\n"
             f"目標：{target}｜停損：{stop}"
         )
@@ -1865,8 +1869,8 @@ if __name__ == "__main__":
     print("\n" + "="*60)
     print(" TOP 10 暴漲潛力股（評分排名）")
     print("="*60)
-    print(df_top10[["code", "close", "change_pct", "volume_lots",
-                     "vol_ratio", "rsi", "surge_score"]].to_string(index=False))
+    print(df_top10[["code", "name", "close", "change_pct", "volume_lots",
+                     "surge_score"]].to_string(index=False))
 
     # 儲存 Markdown 報告
     report_md = generate_report(df_top10, all_results, market)
