@@ -297,7 +297,8 @@ def score_surge_potential(ind: dict, inst: dict, today_info: dict) -> float:
 import feedparser
 
 # 各新聞類別的 Google News RSS 查詢關鍵字
-NEWS_QUERIES = {
+# 英文版：廣泛國際財經新聞
+NEWS_QUERIES_EN = {
     "trump_policy":    "Trump+tariff+trade+Taiwan",
     "taiwan_strait":   "Taiwan+Strait+China+military+PLA",
     "tsmc_semi":       "TSMC+semiconductor+chip+AI+revenue",
@@ -306,7 +307,17 @@ NEWS_QUERIES = {
     "us_china":        "US+China+trade+war+sanction+technology",
 }
 
-GOOGLE_RSS = "https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en&num=15"
+# 繁中版：中央社(site:cna.com.tw) + 公視(site:news.pts.org.tw) 專屬查詢
+# 使用 urllib 編碼，Google News 繁中版回傳較精準的台灣在地新聞
+NEWS_QUERIES_ZH = {
+    "cna_economy":  "site:cna.com.tw (台積電 OR 半導體 OR 關稅 OR 出口 OR 股市 OR AI晶片)",
+    "cna_politics": "site:cna.com.tw (台海 OR 兩岸 OR 解放軍 OR 美台 OR 涉台 OR 統戰)",
+    "pts_economy":  "site:news.pts.org.tw (台積電 OR 半導體 OR 股市 OR 台股 OR 關稅)",
+    "pts_politics": "site:news.pts.org.tw (台海 OR 兩岸 OR 解放軍 OR 美台 OR 軍演)",
+}
+
+GOOGLE_RSS_EN = "https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en&num=15"
+GOOGLE_RSS_ZH = "https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant&num=15"
 
 # 關鍵字情緒字典：{keyword: (score, label, category)}
 # score: 正=對台股利多，負=利空；|score|越大影響越大
@@ -369,28 +380,100 @@ NEWS_SENTIMENT_RULES = [
     ("taiwan trade growth",      +12, "台灣貿易成長",      "tw_macro"),
     ("foreign investment taiwan",+10, "外資流入台灣",      "tw_macro"),
     ("taiwan downgrade",         -12, "台灣評等下調",      "tw_macro"),
+
+    # ══════════════════════════════════════════
+    # 繁中規則（中央社 / 公視 新聞用）
+    # ══════════════════════════════════════════
+
+    # ── 川普/關稅（繁中）──
+    ("豁免關稅",     +20, "川普關稅豁免",      "trump"),
+    ("暫停關稅",     +20, "川普暫停關稅",      "trump"),
+    ("關稅豁免",     +20, "關稅豁免",          "trump"),
+    ("關稅暫緩",     +18, "關稅暫緩",          "trump"),
+    ("關稅減免",     +15, "關稅減免",          "trump"),
+    ("貿易協議",     +12, "貿易協議",          "trump"),
+    ("加徵關稅",     -20, "加徵關稅",          "trump"),
+    ("關稅升",       -18, "關稅上升",          "trump"),
+    ("對等關稅",     -15, "對等關稅",          "trump"),
+    ("貿易戰升溫",   -20, "貿易戰升溫",        "trump"),
+    ("晶片禁令",     -20, "晶片出口禁令",      "trump"),
+    ("出口管制",     -12, "出口管制",          "trump"),
+    ("科技制裁",     -15, "科技制裁",          "trump"),
+    ("川普警告",     -10, "川普警告台灣",      "trump"),
+    ("封鎖荷莫茲",   -12, "地緣衝突擴大",      "trump"),
+
+    # ── 台海/兩岸（繁中）──
+    ("解放軍入侵",   -40, "台海入侵",          "strait"),
+    ("武力犯台",     -40, "武力犯台",          "strait"),
+    ("台海封鎖",     -35, "台海封鎖",          "strait"),
+    ("解放軍軍演",   -30, "解放軍演習",        "strait"),
+    ("軍事演習",     -20, "軍事演習",          "strait"),
+    ("台海緊張",     -20, "台海緊張",          "strait"),
+    ("武裝衝突",     -25, "武裝衝突",          "strait"),
+    ("涉台措施",     -10, "中國涉台統戰",      "strait"),
+    ("統戰工具",     -12, "中國統戰措施",      "strait"),
+    ("鄭習會",        -8, "兩岸政治角力",      "strait"),
+    ("兩岸緊張",     -18, "兩岸緊張",          "strait"),
+    ("美台軍售",     +15, "美台軍售",          "strait"),
+    ("美台防衛",     +12, "美台防衛合作",      "strait"),
+    ("友台",         +10, "友台訊號",          "strait"),
+    ("反制中國",     +8,  "美國反制中國",      "strait"),
+    ("美退將",        +5, "美方支持台灣",      "strait"),
+
+    # ── TSMC/半導體（繁中）──
+    ("台積電創新高",  +20, "台積電創新高",      "semi"),
+    ("台積電強勁",    +15, "台積電業績強勁",    "semi"),
+    ("台積電超預期",  +15, "台積電獲利超標",    "semi"),
+    ("台積電擴產",    +10, "台積電擴產",        "semi"),
+    ("ai晶片需求",    +12, "AI晶片需求旺",      "semi"),
+    ("先進封裝",      +10, "先進封裝需求強",    "semi"),
+    ("cowos",         +10, "CoWoS 需求旺",      "semi"),
+    ("台積電下修",    -15, "台積電下修預期",    "semi"),
+    ("晶片庫存",      -10, "晶片庫存過高",      "semi"),
+    ("半導體下行",    -15, "半導體下行",        "semi"),
+
+    # ── 台股/總經（繁中）──
+    ("台股大漲",      +15, "台股大漲",          "tw_macro"),
+    ("台股創新高",    +18, "台股創新高",        "tw_macro"),
+    ("外資買超",      +12, "外資買超",          "tw_macro"),
+    ("外資回流",      +12, "外資回流台股",      "tw_macro"),
+    ("出口大增",      +12, "台灣出口大增",      "tw_macro"),
+    ("gdp上修",       +10, "台灣GDP上修",       "tw_macro"),
+    ("台股重挫",      -15, "台股重挫",          "tw_macro"),
+    ("外資賣超",      -12, "外資賣超",          "tw_macro"),
+    ("出口衰退",      -12, "台灣出口衰退",      "tw_macro"),
+
+    # ── Fed/利率（繁中）──
+    ("降息",          +15, "降息",              "fed"),
+    ("暫停升息",      +12, "暫停升息",          "fed"),
+    ("鴿派",          +10, "Fed鴿派",           "fed"),
+    ("升息",          -15, "升息",              "fed"),
+    ("鷹派",          -12, "Fed鷹派",           "fed"),
+    ("通膨升溫",      -10, "通膨升溫",          "fed"),
+    ("衰退風險",      -15, "衰退風險",          "fed"),
 ]
 
 
 def fetch_news_sentiment(hours_back: int = 48) -> dict:
     """
-    抓取近 N 小時新聞，進行情緒評分。
+    抓取近 N 小時新聞（英文國際媒體 + 中央社 + 公視），進行情緒評分。
 
     回傳:
       score       : -100 ~ +100（正=利多，負=利空）
-      items       : list of {"title", "source", "pub", "score", "label", "category", "url"}
+      items       : list of {"title", "source", "pub", "score", "label", "category", "url", "lang"}
       category_scores : 各類別小計
       summary     : 簡短文字說明
     """
+    import urllib.parse
     cutoff = datetime.utcnow() - timedelta(hours=hours_back)
     all_entries = []
 
-    for cat, q in NEWS_QUERIES.items():
-        url = GOOGLE_RSS.format(q=q)
+    # ── 英文來源 ──
+    for cat, q in NEWS_QUERIES_EN.items():
+        url = GOOGLE_RSS_EN.format(q=q)
         try:
             feed = feedparser.parse(url)
             for entry in feed.get("entries", [])[:15]:
-                # 解析時間
                 pub_struct = entry.get("published_parsed")
                 if pub_struct:
                     pub_dt = datetime(*pub_struct[:6])
@@ -399,14 +482,54 @@ def fetch_news_sentiment(hours_back: int = 48) -> dict:
                 else:
                     pub_dt = datetime.utcnow()
 
-                title = entry.get("title", "").lower()
                 all_entries.append({
                     "title_raw": entry.get("title", ""),
-                    "title":     title,
+                    "title":     entry.get("title", "").lower(),
                     "source":    entry.get("source", {}).get("title", ""),
                     "pub":       pub_dt.strftime("%m/%d %H:%M"),
                     "url":       entry.get("link", ""),
                     "cat":       cat,
+                    "lang":      "en",
+                })
+        except Exception:
+            pass
+
+    # ── 繁中來源（中央社 + 公視）──
+    for cat, q in NEWS_QUERIES_ZH.items():
+        encoded_q = urllib.parse.quote(q)
+        url = GOOGLE_RSS_ZH.format(q=encoded_q)
+        try:
+            feed = feedparser.parse(url)
+            for entry in feed.get("entries", [])[:15]:
+                pub_struct = entry.get("published_parsed")
+                if pub_struct:
+                    pub_dt = datetime(*pub_struct[:6])
+                    if pub_dt < cutoff:
+                        continue
+                else:
+                    pub_dt = datetime.utcnow()
+
+                # 移除標題末尾的 "| 分類 - 來源" 部分，保留純標題
+                raw_title = entry.get("title", "")
+                clean_title = re.sub(r"\s*[|\-–]\s*(中央社|CNA|公視|PTS).*$", "", raw_title).strip()
+
+                # 取來源標籤
+                src = entry.get("source", {}).get("title", "")
+                if not src:
+                    if "cna.com.tw" in entry.get("link", ""):
+                        src = "中央社 CNA"
+                    elif "pts.org.tw" in entry.get("link", ""):
+                        src = "公視新聞"
+
+                all_entries.append({
+                    "title_raw":   raw_title,
+                    "title":       clean_title.lower(),
+                    "title_zh":    clean_title,   # 繁中原文（供顯示）
+                    "source":      src,
+                    "pub":         pub_dt.strftime("%m/%d %H:%M"),
+                    "url":         entry.get("link", ""),
+                    "cat":         cat,
+                    "lang":        "zh",
                 })
         except Exception:
             pass
@@ -962,13 +1085,16 @@ def generate_report(df_top10: pd.DataFrame, all_results: list, market: dict = No
             if news.get("items"):
                 lines.append("**重要新聞（按影響力排序）：**")
                 lines.append("")
-                lines.append("| 影響 | 時間 | 標題 | 來源 |")
+                lines.append("| 影響 | 時間 | 來源 | 標題 |")
                 lines.append("|------|------|------|------|")
-                for item in news["items"][:8]:
+                for item in news["items"][:10]:
                     icon = "🟢" if item["score"] > 0 else "🔴"
                     score_str = f"{icon} {item['score']:+d}"
-                    title_short = item["title_raw"][:55] + ("…" if len(item["title_raw"]) > 55 else "")
-                    lines.append(f"| {score_str} | {item['pub']} | {title_short} | {item['source'][:20]} |")
+                    # 繁中新聞優先顯示中文標題
+                    display_title = item.get("title_zh") or item["title_raw"]
+                    title_short = display_title[:58] + ("…" if len(display_title) > 58 else "")
+                    src_label = item["source"][:18]
+                    lines.append(f"| {score_str} | {item['pub']} | {src_label} | {title_short} |")
                 lines.append("")
 
         lines.append("### ETF 操作建議")
@@ -1215,11 +1341,14 @@ def build_market_line_message(market: dict) -> dict:
             "tw_macro": "台灣總體", "us_china": "美中關係",
         }
         news_lines.append(f"\n📰 新聞情緒：{news['score']:+d}（{news['summary'][:18]}）")
-        # 最高影響前3則
+        # 最高影響前3則（繁中優先顯示中文標題）
         top_news = news.get("items", [])[:3]
         for item in top_news:
             arrow = "▲" if item["score"] > 0 else "▼"
-            news_lines.append(f"  {arrow}[{item['score']:+d}] {item['title_raw'][:45]}")
+            display = item.get("title_zh") or item["title_raw"]
+            src = item.get("source", "")
+            src_tag = f"[{src[:5]}]" if src else ""
+            news_lines.append(f"  {arrow}[{item['score']:+d}]{src_tag} {display[:42]}")
         # 台海特別警示
         strait_s = news.get("category_scores", {}).get("strait", 0)
         if strait_s <= -15:

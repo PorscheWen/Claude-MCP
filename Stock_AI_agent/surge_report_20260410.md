@@ -9,10 +9,10 @@
 
 | 項目 | 數值 |
 |------|------|
-| 大盤方向 | **強力多頭** |
-| 綜合評分 | `+54` （█████░░░░░）|
-| 隔日 5%+ 漲幅概率 | 中（偏多，但 5% 以上需配合外資大量回補） |
-| 一週趨勢預測 | 一週偏多：均線多頭排列 + MACD 動能向上，持續上漲趨勢明確 |
+| 大盤方向 | **偏多** |
+| 綜合評分 | `+22` （██░░░░░░░░）|
+| 隔日 5%+ 漲幅概率 | 低（偏多但力道不足，小幅上漲較可能） |
+| 一週趨勢預測 | 一週溫和偏多：指數處於整理後醞釀上攻階段 |
 
 ### 台股加權指數（TWII）
 - 最新收盤：**35417.8**（當日 +1.60%）
@@ -33,30 +33,36 @@
 - 🟢 TWII MACD 多頭（DIF=331.6 > DEA=115.4）
 - 🔴 TWII 接近布林上軌（位置 106%），短線壓力
 - 🟢 TWII 近5日強勢上漲 +6.8%，動能延續中
-- 🟢 新聞面偏多（新聞面整體偏多，多項利多訊號共振，貢獻 +12）
+- 🔴 新聞面中性（新聞面中性，無明顯方向性訊號）
+- 🔴 ⚠️ 台海局勢高度緊張，市場恐慌風險大幅上升
 
 ### 新聞情緒分析
-- **新聞評分**：+40　｜　新聞面整體偏多，多項利多訊號共振
-- 掃描新聞：13 則，有情緒影響：6 則
+- **新聞評分**：+0　｜　新聞面中性，無明顯方向性訊號
+- 掃描新聞：38 則，有情緒影響：18 則
 
 **各類別評分：**
+- 台海局勢：-120　`------------------------`
 - 半導體/TSMC：+48　`+++++++++`
 - Fed/利率：+0　``
 
 **重要新聞（按影響力排序）：**
 
-| 影響 | 時間 | 標題 | 來源 |
+| 影響 | 時間 | 來源 | 標題 |
 |------|------|------|------|
-| 🔴 -15 | 04/10 15:15 | 'We might need to raise rates': Fed official put a rate… | Yahoo Finance |
-| 🟢 +15 | 04/10 19:33 | Bond Traders Cling to Bets on a Fed Rate Cut This Year … | Bloomberg.com |
-| 🟢 +12 | 04/10 17:08 | Nvidia Partner TSMC Stock Reports Strong March Sales. A… | Investor's Business  |
-| 🟢 +12 | 04/10 17:20 | TSMC Posts Record Revenue as AI Chip Demand Surges - Le… | Let's Data Science |
-| 🟢 +12 | 04/10 18:05 | TSMC 1Q26 Revenue Jumps 35% on AI Chip Demand - Mexico … | Mexico Business News |
-| 🟢 +12 | 04/11 20:10 | TSMC Reports Record Quarterly Revenue as AI Chip Demand… | IndexBox |
+| 🔴 -15 | 04/10 15:15 | Yahoo Finance | 'We might need to raise rates': Fed official put a rate hi… |
+| 🟢 +15 | 04/10 19:33 | Bloomberg.com | Bond Traders Cling to Bets on a Fed Rate Cut This Year Aft… |
+| 🟢 +12 | 04/10 17:08 | Investor's Busines | Nvidia Partner TSMC Stock Reports Strong March Sales. AI C… |
+| 🟢 +12 | 04/10 17:20 | Let's Data Science | TSMC Posts Record Revenue as AI Chip Demand Surges - Let's… |
+| 🟢 +12 | 04/10 18:05 | Mexico Business Ne | TSMC 1Q26 Revenue Jumps 35% on AI Chip Demand - Mexico Bus… |
+| 🟢 +12 | 04/11 20:10 | IndexBox | TSMC Reports Record Quarterly Revenue as AI Chip Demand Pe… |
+| 🔴 -12 | 04/12 03:07 | 中央社 CNA | 鄭習會後中共祭統戰工具推動上海福建赴台自由行等10項涉台措施| 政治 |
+| 🔴 -10 | 04/12 04:09 | 公視新聞網PNN | 中國公布10項涉台措施 推動直航、滬閩居民自由行 |
+| 🔴 -10 | 04/12 04:50 | 中央社 CNA | 中共涉台措施金門縣府：反映需求盼中央審慎評估| 政治 |
+| 🔴 -10 | 04/12 07:09 | 中央社 CNA | 中共涉台措施提食品業優惠陳時中：留意中斷風險| 政治 |
 
 ### ETF 操作建議
-**建議：強力買進 [00631L] 元大台灣50正2（2x槓桿多方）**
-> 大盤多頭訊號明確（評分 +54），00631L 可放大漲幅收益
+**建議：買進 [00631L] 元大台灣50正2（2x槓桿多方）**
+> 大盤多頭訊號明確（評分 +22），00631L 可放大漲幅收益
 
 ---
 
@@ -387,4 +393,4 @@
 | 當日量能 | 20分 | 成交量(張)規模、當日漲幅是否溫和 |
 
 *本報告由 Stock_AI_agent 自動生成，資料來源：TWSE、Yahoo Finance*
-*生成時間：2026-04-12 22:46:56*
+*生成時間：2026-04-12 22:52:55*
