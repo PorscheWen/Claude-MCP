@@ -9,10 +9,10 @@
 
 | 項目 | 數值 |
 |------|------|
-| 大盤方向 | **偏多** |
-| 綜合評分 | `+42` （████░░░░░░）|
+| 大盤方向 | **強力多頭** |
+| 綜合評分 | `+54` （█████░░░░░）|
 | 隔日 5%+ 漲幅概率 | 中（偏多，但 5% 以上需配合外資大量回補） |
-| 一週趨勢預測 | 一週溫和偏多：指數處於整理後醞釀上攻階段 |
+| 一週趨勢預測 | 一週偏多：均線多頭排列 + MACD 動能向上，持續上漲趨勢明確 |
 
 ### 台股加權指數（TWII）
 - 最新收盤：**35417.8**（當日 +1.60%）
@@ -33,10 +33,30 @@
 - 🟢 TWII MACD 多頭（DIF=331.6 > DEA=115.4）
 - 🔴 TWII 接近布林上軌（位置 106%），短線壓力
 - 🟢 TWII 近5日強勢上漲 +6.8%，動能延續中
+- 🟢 新聞面偏多（新聞面整體偏多，多項利多訊號共振，貢獻 +12）
+
+### 新聞情緒分析
+- **新聞評分**：+40　｜　新聞面整體偏多，多項利多訊號共振
+- 掃描新聞：13 則，有情緒影響：6 則
+
+**各類別評分：**
+- 半導體/TSMC：+48　`+++++++++`
+- Fed/利率：+0　``
+
+**重要新聞（按影響力排序）：**
+
+| 影響 | 時間 | 標題 | 來源 |
+|------|------|------|------|
+| 🔴 -15 | 04/10 15:15 | 'We might need to raise rates': Fed official put a rate… | Yahoo Finance |
+| 🟢 +15 | 04/10 19:33 | Bond Traders Cling to Bets on a Fed Rate Cut This Year … | Bloomberg.com |
+| 🟢 +12 | 04/10 17:08 | Nvidia Partner TSMC Stock Reports Strong March Sales. A… | Investor's Business  |
+| 🟢 +12 | 04/10 17:20 | TSMC Posts Record Revenue as AI Chip Demand Surges - Le… | Let's Data Science |
+| 🟢 +12 | 04/10 18:05 | TSMC 1Q26 Revenue Jumps 35% on AI Chip Demand - Mexico … | Mexico Business News |
+| 🟢 +12 | 04/11 20:10 | TSMC Reports Record Quarterly Revenue as AI Chip Demand… | IndexBox |
 
 ### ETF 操作建議
-**建議：買進 [00631L] 元大台灣50正2（2x槓桿多方）**
-> 大盤多頭訊號明確（評分 +42），00631L 可放大漲幅收益
+**建議：強力買進 [00631L] 元大台灣50正2（2x槓桿多方）**
+> 大盤多頭訊號明確（評分 +54），00631L 可放大漲幅收益
 
 ---
 
@@ -367,4 +387,4 @@
 | 當日量能 | 20分 | 成交量(張)規模、當日漲幅是否溫和 |
 
 *本報告由 Stock_AI_agent 自動生成，資料來源：TWSE、Yahoo Finance*
-*生成時間：2026-04-12 22:39:54*
+*生成時間：2026-04-12 22:46:56*

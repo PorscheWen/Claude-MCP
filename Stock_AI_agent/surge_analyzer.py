@@ -292,7 +292,195 @@ def score_surge_potential(ind: dict, inst: dict, today_info: dict) -> float:
 
 
 # ─────────────────────────────────────────
-# Step 6: 大盤趨勢預測
+# Step 6: 新聞情緒分析
+# ─────────────────────────────────────────
+import feedparser
+
+# 各新聞類別的 Google News RSS 查詢關鍵字
+NEWS_QUERIES = {
+    "trump_policy":    "Trump+tariff+trade+Taiwan",
+    "taiwan_strait":   "Taiwan+Strait+China+military+PLA",
+    "tsmc_semi":       "TSMC+semiconductor+chip+AI+revenue",
+    "fed_rate":        "Federal+Reserve+interest+rate+inflation",
+    "taiwan_economy":  "Taiwan+economy+export+GDP",
+    "us_china":        "US+China+trade+war+sanction+technology",
+}
+
+GOOGLE_RSS = "https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en&num=15"
+
+# 關鍵字情緒字典：{keyword: (score, label, category)}
+# score: 正=對台股利多，負=利空；|score|越大影響越大
+NEWS_SENTIMENT_RULES = [
+    # ── Trump / 關稅 ──
+    ("tariff exemption",         +20, "川普關稅豁免",      "trump"),
+    ("tariff suspension",        +20, "川普暫停關稅",      "trump"),
+    ("tariff pause",             +18, "川普暫停關稅",      "trump"),
+    ("tariff reduction",         +15, "關稅減免",          "trump"),
+    ("trade deal",               +12, "貿易協議",          "trump"),
+    ("tariff hike",              -20, "關稅加徵",          "trump"),
+    ("new tariffs",              -18, "新增關稅",          "trump"),
+    ("tariff increase",          -18, "關稅提高",          "trump"),
+    ("trade war escalat",        -20, "貿易戰升級",        "trump"),
+    ("tech ban",                 -15, "科技禁令",          "trump"),
+    ("chip export ban",          -20, "晶片出口禁令",      "trump"),
+    ("chip restriction",         -15, "晶片限制",          "trump"),
+    ("export control",           -12, "出口管制",          "trump"),
+    ("reciprocal tariff",        -15, "對等關稅",          "trump"),
+
+    # ── 台海關係 ──
+    ("taiwan invasion",          -40, "台海軍事入侵",      "strait"),
+    ("military exercise taiwan", -30, "台海軍演",          "strait"),
+    ("pla drill",                -25, "解放軍演習",        "strait"),
+    ("taiwan blockade",          -35, "台海封鎖",          "strait"),
+    ("cross-strait tension",     -20, "兩岸緊張",          "strait"),
+    ("china military threat",    -18, "中國軍事威脅",      "strait"),
+    ("taiwan strait conflict",   -30, "台海衝突",          "strait"),
+    ("us arms sale taiwan",      +15, "美售台武器",        "strait"),
+    ("us taiwan defense",        +12, "美台防衛合作",      "strait"),
+    ("china abandon threat",     +10, "中國放棄威脅",      "strait"),
+    ("taiwan independence",      -15, "台獨衝突風險",      "strait"),
+
+    # ── TSMC / 半導體 ──
+    ("tsmc record revenue",      +20, "台積電創新高",      "semi"),
+    ("tsmc beat estimate",       +15, "台積電獲利超預期",  "semi"),
+    ("ai chip demand",           +12, "AI 晶片需求強",     "semi"),
+    ("tsmc expansion",           +10, "台積電擴產",        "semi"),
+    ("semiconductor shortage",   +10, "晶片短缺利多",      "semi"),
+    ("nvidia order",             +10, "輝達大單",          "semi"),
+    ("tsmc cut forecast",        -15, "台積電下修",        "semi"),
+    ("chip oversupply",          -12, "晶片供過於求",      "semi"),
+    ("semiconductor downturn",   -15, "半導體下行",        "semi"),
+    ("memory price drop",        -10, "記憶體跌價",        "semi"),
+
+    # ── Fed / 利率 ──
+    ("rate cut",                 +15, "Fed 降息",          "fed"),
+    ("interest rate cut",        +15, "降息",              "fed"),
+    ("dovish fed",               +12, "Fed 鴿派",          "fed"),
+    ("fed pivot",                +12, "Fed 政策轉向",      "fed"),
+    ("rate hike",                -15, "Fed 升息",          "fed"),
+    ("interest rate hike",       -15, "升息壓力",          "fed"),
+    ("hawkish fed",              -12, "Fed 鷹派",          "fed"),
+    ("inflation surge",          -10, "通膨升溫",          "fed"),
+    ("recession risk",           -15, "經濟衰退風險",      "fed"),
+
+    # ── 台灣總體 ──
+    ("taiwan gdp",               +10, "台灣 GDP 利多",     "tw_macro"),
+    ("taiwan export growth",     +12, "台灣出口成長",      "tw_macro"),
+    ("taiwan trade growth",      +12, "台灣貿易成長",      "tw_macro"),
+    ("foreign investment taiwan",+10, "外資流入台灣",      "tw_macro"),
+    ("taiwan downgrade",         -12, "台灣評等下調",      "tw_macro"),
+]
+
+
+def fetch_news_sentiment(hours_back: int = 48) -> dict:
+    """
+    抓取近 N 小時新聞，進行情緒評分。
+
+    回傳:
+      score       : -100 ~ +100（正=利多，負=利空）
+      items       : list of {"title", "source", "pub", "score", "label", "category", "url"}
+      category_scores : 各類別小計
+      summary     : 簡短文字說明
+    """
+    cutoff = datetime.utcnow() - timedelta(hours=hours_back)
+    all_entries = []
+
+    for cat, q in NEWS_QUERIES.items():
+        url = GOOGLE_RSS.format(q=q)
+        try:
+            feed = feedparser.parse(url)
+            for entry in feed.get("entries", [])[:15]:
+                # 解析時間
+                pub_struct = entry.get("published_parsed")
+                if pub_struct:
+                    pub_dt = datetime(*pub_struct[:6])
+                    if pub_dt < cutoff:
+                        continue
+                else:
+                    pub_dt = datetime.utcnow()
+
+                title = entry.get("title", "").lower()
+                all_entries.append({
+                    "title_raw": entry.get("title", ""),
+                    "title":     title,
+                    "source":    entry.get("source", {}).get("title", ""),
+                    "pub":       pub_dt.strftime("%m/%d %H:%M"),
+                    "url":       entry.get("link", ""),
+                    "cat":       cat,
+                })
+        except Exception:
+            pass
+
+    # 去重（同標題不同 RSS 可能重複）
+    seen = set()
+    unique_entries = []
+    for e in all_entries:
+        key = e["title"][:50]
+        if key not in seen:
+            seen.add(key)
+            unique_entries.append(e)
+
+    # 情緒評分
+    scored = []
+    category_scores = {}
+
+    for entry in unique_entries:
+        title = entry["title"]
+        best_score = 0
+        best_label = ""
+        best_cat   = ""
+
+        for keyword, score, label, cat in NEWS_SENTIMENT_RULES:
+            if keyword.lower() in title:
+                if abs(score) > abs(best_score):
+                    best_score = score
+                    best_label = label
+                    best_cat   = cat
+
+        entry["score"] = best_score
+        entry["label"] = best_label
+        entry["category"] = best_cat
+
+        if best_score != 0:
+            scored.append(entry)
+            category_scores[best_cat] = category_scores.get(best_cat, 0) + best_score
+
+    # 加權總分（避免單類堆疊，各類別設上下限）
+    total_score = 0
+    for cat, s in category_scores.items():
+        capped = max(-40, min(40, s))  # 每個類別最多 ±40
+        total_score += capped
+
+    total_score = max(-100, min(100, total_score))
+
+    # 排序：分數絕對值大的優先，同分取最新
+    scored_sorted = sorted(scored, key=lambda x: (-abs(x["score"]), x["pub"]), reverse=False)
+    scored_sorted = sorted(scored_sorted, key=lambda x: abs(x["score"]), reverse=True)
+
+    # 摘要說明
+    if total_score >= 30:
+        summary = "新聞面整體偏多，多項利多訊號共振"
+    elif total_score >= 10:
+        summary = "新聞面溫和偏多，有正面催化劑"
+    elif total_score <= -30:
+        summary = "新聞面整體偏空，多項利空訊號出現"
+    elif total_score <= -10:
+        summary = "新聞面溫和偏空，存在不確定風險"
+    else:
+        summary = "新聞面中性，無明顯方向性訊號"
+
+    return {
+        "score":            total_score,
+        "items":            scored_sorted[:12],   # 最多顯示 12 則
+        "all_count":        len(unique_entries),
+        "scored_count":     len(scored),
+        "category_scores":  category_scores,
+        "summary":          summary,
+    }
+
+
+# ─────────────────────────────────────────
+# Step 7: 大盤趨勢預測
 # ─────────────────────────────────────────
 ETF_BULL = "00631L"   # 元大台灣50正2（2x 多方槓桿）
 ETF_BEAR = "00618"    # 空方對應 ETF
@@ -502,7 +690,31 @@ def predict_market_trend() -> dict:
             score -= 7
             signals.append(f"美股小幅收黑 {us_avg_chg:.1f}%（台股偏保守）")
 
-    # ── 3. 綜合判斷 ──
+    # ── 3. 新聞情緒分析 ──
+    news = fetch_news_sentiment(hours_back=48)
+    news_score = news["score"]
+
+    # 新聞分數以 30% 權重加入大盤評分（技術面 70% + 新聞面 30%）
+    news_contribution = round(news_score * 0.30)
+    score += news_contribution
+
+    if news_contribution >= 6:
+        signals.append(f"新聞面偏多（{news['summary']}，貢獻 +{news_contribution}）")
+    elif news_contribution <= -6:
+        signals.append(f"新聞面偏空（{news['summary']}，貢獻 {news_contribution}）")
+    else:
+        signals.append(f"新聞面中性（{news['summary']}）")
+
+    # 台海緊張特別處理（直接強制覆蓋）
+    strait_score = news["category_scores"].get("strait", 0)
+    if strait_score <= -30:
+        score -= 20
+        signals.append("⚠️ 台海局勢高度緊張，市場恐慌風險大幅上升")
+    elif strait_score <= -15:
+        score -= 10
+        signals.append("⚠️ 台海關係出現緊張訊號，注意地緣政治風險")
+
+    # ── 4. 綜合判斷 ──
     score = max(-100, min(100, score))
 
     # 隔日 5%+ 漲幅概率判斷（需多重強訊號）
@@ -573,6 +785,7 @@ def predict_market_trend() -> dict:
         "signals":          signals,
         "twii":             twii_data,
         "us_markets":       us_data,
+        "news":             news,
     }
 
 
@@ -722,6 +935,41 @@ def generate_report(df_top10: pd.DataFrame, all_results: list, market: dict = No
             icon = "🟢" if any(k in sig for k in ["多頭", "金叉", "強勢", "漲", "偏多", "超賣", "反彈"]) else "🔴"
             lines.append(f"- {icon} {sig}")
         lines.append("")
+
+        # 新聞情緒分析區塊
+        news = market.get("news", {})
+        if news:
+            cat_zh = {
+                "trump":     "川普/關稅",
+                "strait":    "台海局勢",
+                "semi":      "半導體/TSMC",
+                "fed":       "Fed/利率",
+                "tw_macro":  "台灣總體",
+                "us_china":  "美中關係",
+            }
+            lines.append("### 新聞情緒分析")
+            lines.append(f"- **新聞評分**：{news['score']:+d}　｜　{news['summary']}")
+            lines.append(f"- 掃描新聞：{news['all_count']} 則，有情緒影響：{news['scored_count']} 則")
+            lines.append("")
+
+            if news.get("category_scores"):
+                lines.append("**各類別評分：**")
+                for cat, s in sorted(news["category_scores"].items(), key=lambda x: abs(x[1]), reverse=True):
+                    bar = "+" * max(0, s // 5) if s > 0 else "-" * max(0, abs(s) // 5)
+                    lines.append(f"- {cat_zh.get(cat, cat)}：{s:+d}　`{bar}`")
+                lines.append("")
+
+            if news.get("items"):
+                lines.append("**重要新聞（按影響力排序）：**")
+                lines.append("")
+                lines.append("| 影響 | 時間 | 標題 | 來源 |")
+                lines.append("|------|------|------|------|")
+                for item in news["items"][:8]:
+                    icon = "🟢" if item["score"] > 0 else "🔴"
+                    score_str = f"{icon} {item['score']:+d}"
+                    title_short = item["title_raw"][:55] + ("…" if len(item["title_raw"]) > 55 else "")
+                    lines.append(f"| {score_str} | {item['pub']} | {title_short} | {item['source'][:20]} |")
+                lines.append("")
 
         lines.append("### ETF 操作建議")
         if etf.get("code"):
@@ -957,6 +1205,26 @@ def build_market_line_message(market: dict) -> dict:
             f"\n近5日：{twii.get('ret5', 0):+.2f}%｜近10日：{twii.get('ret10', 0):+.2f}%"
         )
 
+    # 新聞摘要
+    news = market.get("news", {})
+    news_lines = []
+    if news:
+        cat_zh = {
+            "trump": "川普/關稅", "strait": "台海局勢",
+            "semi": "半導體", "fed": "Fed利率",
+            "tw_macro": "台灣總體", "us_china": "美中關係",
+        }
+        news_lines.append(f"\n📰 新聞情緒：{news['score']:+d}（{news['summary'][:18]}）")
+        # 最高影響前3則
+        top_news = news.get("items", [])[:3]
+        for item in top_news:
+            arrow = "▲" if item["score"] > 0 else "▼"
+            news_lines.append(f"  {arrow}[{item['score']:+d}] {item['title_raw'][:45]}")
+        # 台海特別警示
+        strait_s = news.get("category_scores", {}).get("strait", 0)
+        if strait_s <= -15:
+            news_lines.append(f"\n⚠️ 台海警示：台海情緒分 {strait_s}，高度關注！")
+
     text = (
         f"{score_icon} 大盤趨勢預測\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -965,6 +1233,7 @@ def build_market_line_message(market: dict) -> dict:
         f"一週趨勢：{market['weekly_trend'][:30]}"
         f"{twii_line}\n\n"
         f"🌍 美股前收\n" + "\n".join(us_lines) +
+        "\n".join(news_lines) +
         "\n\n主要訊號：\n" + "\n".join(signal_summary) +
         etf_line
     )
