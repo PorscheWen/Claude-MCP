@@ -14,10 +14,19 @@ import pandas as pd
 import yfinance as yf
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
-TRADE_DATE = "20260410"
-TRADE_DATE_FMT = "2026-04-10"
+def _get_last_trading_date() -> str:
+    """自動計算最近一個台股交易日（YYYYMMDD），跳過週末。以台灣時區（UTC+8）為基準。"""
+    TW = timezone(timedelta(hours=8))
+    candidate = datetime.now(TW).replace(hour=0, minute=0, second=0, microsecond=0)
+    # 若是週末則往前找最近的週五
+    while candidate.weekday() >= 5:  # 5=Saturday, 6=Sunday
+        candidate -= timedelta(days=1)
+    return candidate.strftime("%Y%m%d")
+
+TRADE_DATE = _get_last_trading_date()
+TRADE_DATE_FMT = f"{TRADE_DATE[:4]}-{TRADE_DATE[4:6]}-{TRADE_DATE[6:]}"
 
 
 # ─────────────────────────────────────────
@@ -512,7 +521,8 @@ def fetch_news_sentiment(hours_back: int = 48) -> dict:
       summary     : 簡短文字說明
     """
     import urllib.parse
-    cutoff = datetime.utcnow() - timedelta(hours=hours_back)
+    _now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    cutoff = _now_utc - timedelta(hours=hours_back)
     all_entries = []
 
     # ── 英文來源 ──
@@ -527,7 +537,7 @@ def fetch_news_sentiment(hours_back: int = 48) -> dict:
                     if pub_dt < cutoff:
                         continue
                 else:
-                    pub_dt = datetime.utcnow()
+                    pub_dt = _now_utc
 
                 all_entries.append({
                     "title_raw": entry.get("title", ""),
@@ -554,7 +564,7 @@ def fetch_news_sentiment(hours_back: int = 48) -> dict:
                     if pub_dt < cutoff:
                         continue
                 else:
-                    pub_dt = datetime.utcnow()
+                    pub_dt = _now_utc
 
                 # 移除標題末尾的分類標籤與來源
                 # e.g. "標題| 政治 - 中央社 CNA" → "標題"
@@ -1874,8 +1884,9 @@ if __name__ == "__main__":
 
     # 儲存 Markdown 報告
     report_md = generate_report(df_top10, all_results, market)
-    report_dir = "C:/Users/BaoGo/Documents/ClaudeCode/Stock_AI_agent"
-    output_path = f"{report_dir}/surge_report_{TRADE_DATE}.md"
+    report_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daily_run")
+    os.makedirs(report_dir, exist_ok=True)
+    output_path = os.path.join(report_dir, f"surge_report_{TRADE_DATE}.md")
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(report_md)
     print(f"\n✓ 報告已儲存：{output_path}")
