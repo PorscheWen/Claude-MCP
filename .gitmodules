@@ -1,0 +1,6 @@
+[submodule "Bot_Agent"]
+	path = Bot_Agent
+	url = https://github.com/PorscheWen/Bot_Agent.git
+[submodule "What_To_Eat"]
+	path = What_To_Eat
+	url = https://github.com/PorscheWen/What_To_Eat.git
