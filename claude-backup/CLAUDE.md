@@ -27,9 +27,35 @@
 
 # 工具與環境設定
 
-> 所有 Token / Key 統一存放於 `C:\Users\BaoGo\Documents\ClaudeCode\.env`
+> 所有 Token / Key 統一存放於專案根目錄的 `.env` 文件
 > 每次新增或更換工具憑證，請同步更新此區塊與 `.env`
 
+## Notion
+- **用途**：儲存薪資明細、個人資料整理
+- **Token**：存放於 `.env` 中的 `NOTION_TOKEN`
+- **薪資頁面 ID**：`33ffaa77d38680ffb092f956c667f599`
+- **薪資資料庫 ID**：`33ffaa77-d386-81e3-9d95-c3f4b01383c2`
+- **API 版本**：`2022-06-28`
+
+## LINE Messaging API — What_To_Eat Bot
+- **用途**：午餐推薦 LINE Bot
+- **Channel ID**：`2008240021`
+- **Bot ID**：`@921ylmxm`
+- **Channel Secret**：存放於 `.env` 中的 `LINE_CHANNEL_SECRET`
+- **Access Token**：存放於 `.env` 中的 `LINE_ACCESS_TOKEN`
+- **User ID**：`Uc4b6168aaeef9ffdf18e4ab0273ff9b9`
+- **Webhook URL (n8n)**：`https://baogo.app.n8n.cloud/webhook-test/f97a8e90-df0b-444d-9feb-5e3c495d4888`
+- ⚠️ Access Token 建議定期更換
+
+## LINE Messaging API — Memo Bot
+- **用途**：個性化管家 LINE Bot（聊天、喜好記錄、節日提醒）
+- **Channel ID**：`2009774986`
+- **Channel Secret**：存放於 `.env` 中的 `MEMO_BOT_CHANNEL_SECRET`
+- **Access Token**：存放於 `.env` 中的 `MEMO_BOT_ACCESS_TOKEN`
+- **Notion 喜好 DB**：`03379f2a060847eaae6a7f6682d4a4dc`
+- **Notion 重要日期 DB**：`e9845c76ea754920a2a827264ebef5b3`
+- **Repo**：`PorscheWen/Bot_Agent`
+- ⚠️ Access Token 建議定期更換
 
 ## Google Drive / Gmail (MCP: google-workspace)
 - **用途**：搜尋 Gmail 信件、上傳/下載 Drive 檔案
@@ -43,4 +69,23 @@
 - **美股**：NVDA、AAPL、MSFT、TSLA、AMD
 
 ## 其他
-- **PDF 解密密碼**：`H122407592`（身分證字號，用於解開薪資單 PDF）
+- **PDF 解密密碼**：存放於 `.env` 中的 `PDF_PASSWORD`（用於解開薪資單 PDF）
+
+---
+
+# 專案架構
+
+```
+ClaudeCode/
+├── .github/
+│   ├── copilot-instructions.md  # 本文件
+│   └── skills/                  # 自定義 skills
+│       └── stock-advisor/       # 股票顧問 skill
+├── memory/                      # Claude 記憶文件
+├── .env                        # 環境變數（不提交到 Git）
+├── .env.example                # 環境變數範本
+├── example.py                  # Claude API 使用範例
+├── run_claude.py               # 互動式 Claude CLI
+├── requirements.txt            # Python 依賴
+└── README.md                   # 專案說明
+```

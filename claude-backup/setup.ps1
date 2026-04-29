@@ -47,6 +47,23 @@ if (-not (Test-Path $TargetClaude)) {
     Write-Host "[~]  CLAUDE.md 已存在，跳過（避免覆蓋）" -ForegroundColor Yellow
 }
 
+# 6. 複製 Python 專案檔案到專案目錄
+$pythonFiles = @("run_claude.py", "example.py", "requirements.txt", ".env.example")
+foreach ($file in $pythonFiles) {
+    $src = Join-Path (Split-Path -Parent $ScriptDir) $file
+    $dst = Join-Path $ProjectPath $file
+    if (Test-Path $src) {
+        if (-not (Test-Path $dst)) {
+            Copy-Item -Force $src $dst
+            Write-Host "[+]  $file 複製到 $ProjectPath" -ForegroundColor Green
+        } else {
+            Write-Host "[~]  $file 已存在，跳過（避免覆蓋）" -ForegroundColor Yellow
+        }
+    }
+}
+Write-Host "[6/6] Python 專案檔案還原完成" -ForegroundColor Green
+
 Write-Host ""
 Write-Host "完成！請重新啟動 Claude Code。" -ForegroundColor Cyan
 Write-Host "若 statusline 腳本無法執行，需確認 Git Bash / WSL 已安裝。"
+Write-Host "安裝 Python 依賴：cd $ProjectPath && pip install -r requirements.txt"
